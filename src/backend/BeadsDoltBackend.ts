@@ -44,6 +44,7 @@ export class BeadsDoltBackend implements BeadsBackend {
   private pool: mysql.Pool | null = null;
   private connectionInfo: DoltConnectionInfo | null = null;
   private readonly inFlightReads = new Map<string, Promise<unknown>>();
+  private depSqlPartsPromise: Promise<{ targetExpr: string; issueTargetColumn: string }> | null = null;
   private poolPromise: Promise<mysql.Pool> | null = null;
 
   constructor(params: {
@@ -281,19 +282,49 @@ export class BeadsDoltBackend implements BeadsBackend {
     return result;
   }
 
+  /**
+   * bd >= 1.1 (schema migration 0043) dropped `dependencies.depends_on_id`,
+   * splitting it into typed target columns (`depends_on_issue_id`,
+   * `depends_on_wisp_id`, `depends_on_external`); older databases still use
+   * the original column. Detect which schema is present once per connection
+   * and derive the SQL fragments for each shape (#79).
+   */
+  private async getDepSqlParts(): Promise<{ targetExpr: string; issueTargetColumn: string }> {
+    this.depSqlPartsPromise ??= this.query<SqlRow>(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'dependencies'
+        AND column_name = 'depends_on_issue_id'
+    `).then((rows) =>
+      rows.length > 0
+        ? {
+            // Typed targets: prefer the issue id, fall back to wisp/external
+            // so those rows still surface with a usable identifier.
+            targetExpr: "COALESCE(d.depends_on_issue_id, d.depends_on_wisp_id, d.depends_on_external)",
+            issueTargetColumn: "depends_on_issue_id",
+          }
+        : {
+            targetExpr: "d.depends_on_id",
+            issueTargetColumn: "depends_on_id",
+          }
+    );
+    return this.depSqlPartsPromise;
+  }
+
   private async loadDependencies(issueId: string): Promise<BeadsIssue["dependencies"]> {
+    const { targetExpr, issueTargetColumn } = await this.getDepSqlParts();
     const rows = await this.query<SqlRow>(`
       SELECT
-        d.depends_on_id AS id,
+        ${targetExpr} AS id,
         d.type AS dependency_type,
         i.issue_type,
         i.title,
         i.status,
         i.priority
       FROM dependencies d
-      LEFT JOIN issues i ON i.id = d.depends_on_id
+      LEFT JOIN issues i ON i.id = d.${issueTargetColumn}
       WHERE d.issue_id = ?
-      ORDER BY d.depends_on_id ASC
+      ORDER BY id ASC
     `, [issueId]);
 
     return rows.map((row) => ({
@@ -307,6 +338,7 @@ export class BeadsDoltBackend implements BeadsBackend {
   }
 
   private async loadDependents(issueId: string): Promise<BeadsIssue["dependents"]> {
+    const { issueTargetColumn } = await this.getDepSqlParts();
     const rows = await this.query<SqlRow>(`
       SELECT
         d.issue_id AS id,
@@ -317,7 +349,7 @@ export class BeadsDoltBackend implements BeadsBackend {
         i.priority
       FROM dependencies d
       LEFT JOIN issues i ON i.id = d.issue_id
-      WHERE d.depends_on_id = ?
+      WHERE d.${issueTargetColumn} = ?
       ORDER BY d.issue_id ASC
     `, [issueId]);
 
@@ -515,6 +547,7 @@ export class BeadsDoltBackend implements BeadsBackend {
 
   private async resetPool(): Promise<void> {
     this.poolPromise = null;
+    this.depSqlPartsPromise = null;
     if (this.pool) {
       await this.pool.end();
     }
