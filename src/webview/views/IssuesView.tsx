@@ -32,6 +32,7 @@ import {
   BeadType,
   STATUS_LABELS,
   STATUS_COLORS,
+  UNKNOWN_STATUS_COLOR,
   PRIORITY_COLORS,
   TYPE_LABELS,
   TYPE_COLORS,
@@ -90,11 +91,16 @@ interface FilterPreset {
 
 const FILTER_PRESETS: FilterPreset[] = [
   { id: "all", label: "All", statuses: [] },
-  { id: "not-closed", label: "Not Closed", statuses: ["open", "in_progress", "blocked"] },
-  { id: "active", label: "Active", statuses: ["in_progress", "blocked"] },
+  { id: "not-closed", label: "Not Closed", statuses: ["open", "in_progress", "blocked", "deferred", "pinned", "hooked"] },
+  { id: "active", label: "Active", statuses: ["in_progress", "blocked", "hooked"] },
   { id: "blocked", label: "Blocked", statuses: ["blocked"] },
   { id: "closed", label: "Closed", statuses: ["closed"] },
 ];
+
+const DEFAULT_PRESET_ID = "not-closed";
+
+const presetStatuses = (id: string): BeadStatus[] =>
+  FILTER_PRESETS.find((p) => p.id === id)?.statuses ?? [];
 
 const columnHelper = createColumnHelper<Bead>();
 
@@ -129,7 +135,10 @@ export function IssuesView({
 
   // Non-persisted TanStack state
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([
-    { id: "status", value: ["open", "in_progress", "blocked"] }, // Default: Not Closed
+    // Derived from the preset so the two cannot drift. A hardcoded list here
+    // silently hid deferred/pinned/hooked beads while the UI showed the
+    // "Not Closed" preset as active.
+    { id: "status", value: presetStatuses(DEFAULT_PRESET_ID) },
   ]);
   const [globalFilter, setGlobalFilter] = useState("");
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
@@ -138,7 +147,7 @@ export function IssuesView({
 
   // UI state
   const [viewMode, setViewMode] = useState<"table" | "board">("table");
-  const [activePreset, setActivePreset] = useState<string>("not-closed");
+  const [activePreset, setActivePreset] = useState<string>(DEFAULT_PRESET_ID);
   const [filterBarOpen, setFilterBarOpen] = useState(true);
   const [filterMenuOpen, setFilterMenuOpen] = useState<string | null>(null);
   const [columnMenuOpen, setColumnMenuOpen] = useState(false);
@@ -543,13 +552,13 @@ export function IssuesView({
   const typeFacets = table.getColumn("type")?.getFacetedUniqueValues() ?? new Map();
   const assigneeFacets = table.getColumn("assignee")?.getFacetedUniqueValues() ?? new Map();
 
-  // Unfiltered counts per status (for kanban empty state messaging)
+  // Unfiltered counts per status (for kanban empty state messaging).
+  // Tallies every status present, including custom ones, so board columns for
+  // non-built-in statuses still get an accurate "n/N" count.
   const unfilteredStatusCounts = useMemo(() => {
-    const counts: Record<BeadStatus, number> = { open: 0, in_progress: 0, blocked: 0, closed: 0 };
+    const counts: Record<string, number> = {};
     for (const bead of beads) {
-      if (bead.status in counts) {
-        counts[bead.status as BeadStatus]++;
-      }
+      counts[bead.status] = (counts[bead.status] ?? 0) + 1;
     }
     return counts;
   }, [beads]);
@@ -695,8 +704,8 @@ export function IssuesView({
           {statusFilter.map((status) => (
             <FilterChip
               key={`status-${status}`}
-              label={STATUS_LABELS[status]}
-              accentColor={STATUS_COLORS[status]}
+              label={STATUS_LABELS[status] ?? status}
+              accentColor={STATUS_COLORS[status] ?? UNKNOWN_STATUS_COLOR}
               onRemove={() => removeStatusFilter(status)}
             />
           ))}
@@ -754,7 +763,13 @@ export function IssuesView({
 
             {filterMenuOpen === "status" && (
               <div className="filter-menu">
-                {(Object.keys(STATUS_LABELS) as BeadStatus[])
+                {/* Built-in statuses plus any custom status present in the data */}
+                {([
+                  ...Object.keys(STATUS_LABELS),
+                  ...[...statusFacets.keys()].filter(
+                    (s): s is string => typeof s === "string" && !(s in STATUS_LABELS)
+                  ),
+                ] as BeadStatus[])
                   .filter((s) => !statusFilter.includes(s))
                   .map((status) => {
                     const count = statusFacets.get(status) ?? 0;

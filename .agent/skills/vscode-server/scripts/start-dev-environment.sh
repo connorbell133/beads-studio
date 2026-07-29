@@ -74,6 +74,15 @@ else
   echo "SYMLINK:created"
 fi
 
+# Read back: never trust the write. A stale link means code-server silently
+# tests the wrong worktree, which looks like a passing test run.
+actual_link=$(readlink "$symlink_path" 2>/dev/null || echo "")
+if [[ "$actual_link" != "$project_dir" ]]; then
+  echo "ERROR:symlink $symlink_path points to '$actual_link', expected '$project_dir'"
+  exit 1
+fi
+echo "SYMLINK_TARGET:$actual_link"
+
 # Step 3: Build
 if bun run compile:quiet 2>&1; then
   echo "BUILD:success"
