@@ -8,7 +8,10 @@
 # test data - build a fixture instead.
 #
 # Usage:
-#   make-test-fixture.sh [--server] [target-dir]   # default: /tmp/bd-test-fixture
+#   make-test-fixture.sh [--server] [target-dir]   # default: tmp/bd-test-fixture
+#
+# Fixtures belong in the repo's gitignored `tmp/`, not the system /tmp. Relative
+# targets resolve against the current directory, so run this from the repo root.
 #
 #   --server   Use an external dolt sql-server (bd manages it) instead of the
 #              embedded engine. Embedded exercises the CLI backend; --server
@@ -42,8 +45,15 @@ while [ $# -gt 0 ]; do
     *) target_dir="$1"; shift ;;
   esac
 done
-target_dir="${target_dir:-/tmp/bd-test-fixture}"
+target_dir="${target_dir:-tmp/bd-test-fixture}"
 prefix="fixture"
+
+# Everything below works on the absolute path, so a relative target cannot skip
+# the safety checks by resolving somewhere else later.
+case "$target_dir" in
+  /*) target_dir="$target_dir" ;;
+  *)  target_dir="$PWD/$target_dir" ;;
+esac
 
 for tool in bd jq; do
   if ! command -v "$tool" >/dev/null 2>&1; then
@@ -56,7 +66,8 @@ done
 # empty variable must not be able to take out a real directory.
 case "$target_dir" in
   /tmp/*|/private/tmp/*|"${TMPDIR:-/nonexistent}"*) ;;
-  *) echo "ERROR:target must live under /tmp (or \$TMPDIR); got '$target_dir'"; exit 1 ;;
+  */tmp/*) ;;  # repo-local gitignored scratch, e.g. <repo>/tmp/bd-test-fixture
+  *) echo "ERROR:target must live under a tmp directory; got '$target_dir'"; exit 1 ;;
 esac
 case "$target_dir" in
   *..*) echo "ERROR:target must not contain '..'; got '$target_dir'"; exit 1 ;;
@@ -81,6 +92,11 @@ rm -rf -- "$target_dir"
 mkdir -p "$target_dir"
 cd "$target_dir"
 git init -q .
+
+# Without this, a fixture created inside another beads project inherits that
+# project's config - `bd init` walks up and lands in shared-server mode, so the
+# embedded fixture silently is not embedded. Pinning BEADS_DIR stops the walk.
+export BEADS_DIR="$target_dir/.beads"
 
 init_args=(--prefix "$prefix" --non-interactive)
 [ "$mode" = "server" ] && init_args+=(--server)

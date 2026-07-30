@@ -54,7 +54,7 @@ feature is broken" when it is really the fixture that is missing.
 
 ```bash
 .agent/skills/vscode-server/scripts/make-test-fixture.sh [--server] [target-dir]
-# default target: /tmp/bd-test-fixture
+# default target: tmp/bd-test-fixture
 # prints FIXTURE_DIR:<path>, FIXTURE_MODE:<embedded|server>, FIXTURE_BEADS:<count>
 ```
 
@@ -78,14 +78,21 @@ diverged before (#79, F2/F4 of the bd 1.1.2 audit), so a release check needs
 both:
 
 ```bash
-.agent/skills/vscode-server/scripts/make-test-fixture.sh /tmp/bd-release-fixture
-.agent/skills/vscode-server/scripts/make-test-fixture.sh --server /tmp/bd-release-fixture-server
+.agent/skills/vscode-server/scripts/make-test-fixture.sh tmp/bd-release-fixture
+.agent/skills/vscode-server/scripts/make-test-fixture.sh --server tmp/bd-release-fixture-server
 ```
 
 Stop a server fixture with `bd dolt stop` from its directory when done; re-running
 the script against the same path does this for you.
 
-Open either with `?folder=<FIXTURE_DIR>` and accept the workspace-trust prompt.
+Fixtures live in the repo's gitignored `tmp/`. Relative targets resolve against the
+current directory, so run the script from the repo root. The script pins `BEADS_DIR`
+to the fixture's own `.beads` before `bd init` — without that, a fixture created
+inside another beads project inherits that project's config and comes up in
+shared-server mode, so the "embedded" fixture would not actually be embedded.
+
+Open either with `?folder=<FIXTURE_DIR>` (the absolute path the script prints) and
+accept the workspace-trust prompt.
 
 ### Release verification pass
 
@@ -115,9 +122,9 @@ Throwaway fixture for the "no project found" path (#76) — folder with no `.bea
 `beads.pathToBd` that does not resolve:
 
 ```bash
-mkdir -p /tmp/beads-fixture-noproject/.vscode
-echo '{"beads.pathToBd": "tools/bd"}' > /tmp/beads-fixture-noproject/.vscode/settings.json
-# open via http://127.0.0.1:<port>/?folder=/tmp/beads-fixture-noproject
+mkdir -p tmp/beads-fixture-noproject/.vscode
+echo '{"beads.pathToBd": "tools/bd"}' > tmp/beads-fixture-noproject/.vscode/settings.json
+# open via http://127.0.0.1:<port>/?folder=<repo>/tmp/beads-fixture-noproject
 ```
 
 Expected: Dashboard and Issues show "No Beads project found" (no spinner), and Beads.log
