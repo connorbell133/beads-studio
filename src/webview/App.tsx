@@ -19,6 +19,7 @@ import {
 import { DashboardView } from "./views/DashboardView";
 import { IssuesView } from "./views/IssuesView";
 import { DetailsView } from "./views/DetailsView";
+import { GraphView } from "./views/GraphView";
 import { Loading } from "./common/Loading";
 import { NoProject } from "./common/NoProject";
 import { ToastProvider, triggerToast } from "./common/Toast";
@@ -185,6 +186,21 @@ export function App(): React.ReactElement {
             onRetry={() =>
               vscode.postMessage({ type: "refresh" })
             }
+          />
+        );
+
+      case "beadsGraph":
+        return (
+          <GraphView
+            beads={visibleBeads}
+            graph={state.graph}
+            loading={state.loading}
+            error={state.error}
+            selectedBeadId={state.selectedBeadId}
+            onSelectBead={(beadId) =>
+              vscode.postMessage({ type: "openBeadDetails", beadId })
+            }
+            onRetry={() => vscode.postMessage({ type: "refresh" })}
           />
         );
 

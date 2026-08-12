@@ -2843,3 +2843,140 @@ textarea {
   font-size: 11px;
   line-height: 1.5;
 }
+
+/* ---- Graph view (editor tab) --------------------------------------------
+   The adjacency layer: every bead and its blockers as real text. This is the
+   accessible representation the visual layer sits on top of, not a fallback.
+   Wider measure than the sidebar because an editor tab has the room. */
+.graph-view {
+  padding: var(--spacing-lg) var(--spacing-xl);
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.graph-header {
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  margin-bottom: var(--spacing-md);
+}
+
+.graph-title {
+  margin: 0;
+  font-size: 1.3em;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.graph-summary {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.graph-cycle-warning {
+  color: var(--vscode-editorWarning-foreground, var(--vscode-errorForeground));
+}
+
+.graph-adjacency {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.graph-row {
+  border-bottom: 1px solid var(--vscode-panel-border);
+  padding: var(--spacing-xs) 0;
+}
+
+/* A cycle is data to report, so mark the rows tangled in one rather than
+   silently rendering an unresolvable ordering. */
+.graph-row.in-cycle {
+  border-left: 2px solid var(--vscode-editorWarning-foreground, var(--vscode-errorForeground));
+  padding-left: var(--spacing-sm);
+}
+
+.graph-row.selected {
+  background: var(--vscode-list-activeSelectionBackground);
+}
+
+.graph-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.graph-row-main:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.graph-row-id {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
+}
+
+.graph-row-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-chip {
+  flex-shrink: 0;
+  padding: 1px var(--spacing-sm);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 10px;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.graph-chip.ready {
+  border-color: var(--vscode-testing-iconPassed);
+  color: var(--vscode-testing-iconPassed);
+}
+
+/* The blocker chain reads inline as a breadcrumb, not as a red badge that
+   hides which bead is actually in the way. */
+.graph-row-blockers {
+  margin: 0 0 var(--spacing-xs) 0;
+  padding-left: calc(16px + var(--spacing-sm) + var(--spacing-sm));
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.graph-blockers-label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+
+.graph-blocker-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-family: var(--vscode-editor-font-family);
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.graph-blocker-link:hover {
+  color: var(--vscode-textLink-activeForeground);
+}
+
+.empty-state-hint {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}

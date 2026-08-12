@@ -78,6 +78,10 @@
         "icon": "$(list-unordered)"
       },
       {
+        "command": "beads.openGraph",
+        "title": "Beads: Open Dependency Graph"
+      },
+      {
         "command": "beads.openBeadDetails",
         "title": "Beads: Open Issue Details",
         "icon": "$(file-text)"

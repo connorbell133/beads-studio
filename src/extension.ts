@@ -11,6 +11,7 @@ import { BeadsProjectManager } from "./backend/BeadsProjectManager";
 import { DashboardViewProvider } from "./providers/DashboardViewProvider";
 import { BeadsPanelViewProvider } from "./providers/BeadsPanelViewProvider";
 import { BeadDetailsViewProvider } from "./providers/BeadDetailsViewProvider";
+import { BeadsGraphPanel } from "./providers/BeadsGraphPanel";
 import { createLogger, Logger } from "./utils/logger";
 
 let log: Logger;
@@ -18,6 +19,7 @@ let projectManager: BeadsProjectManager;
 let dashboardProvider: DashboardViewProvider;
 let beadsPanelProvider: BeadsPanelViewProvider;
 let detailsProvider: BeadDetailsViewProvider;
+let graphPanel: BeadsGraphPanel;
 let statusBar: vscode.StatusBarItem;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -68,6 +70,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     log
   );
 
+  // The graph lives in an editor tab, not the sidebar: a DAG does not fit in
+  // 300px, and that constraint has shaped the whole extension until now.
+  graphPanel = new BeadsGraphPanel(context.extensionUri, projectManager, log);
+  context.subscriptions.push({ dispose: () => graphPanel.dispose() });
+
   // Register webview providers
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("beadsDashboard", dashboardProvider, {
@@ -89,6 +96,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand("beads.openBeadsPanel", () => {
       vscode.commands.executeCommand("beadsPanel.focus");
+    }),
+
+    vscode.commands.registerCommand("beads.openGraph", (beadId?: string) => {
+      graphPanel.show(beadId);
     }),
 
     vscode.commands.registerCommand("beads.openBeadDetails", async (beadId?: string) => {
@@ -134,6 +145,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       dashboardProvider.hardRefresh();
       beadsPanelProvider.hardRefresh();
       detailsProvider.hardRefresh();
+      graphPanel.hardRefresh();
       log.info("Refresh complete");
       vscode.window.setStatusBarMessage("$(check) Beads: Refreshed", 2000);
     }),
@@ -281,6 +293,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       dashboardProvider.refresh();
       beadsPanelProvider.refresh();
       detailsProvider.refresh();
+      graphPanel.refresh();
     }),
 
     projectManager.onActiveProjectChanged(() => {
@@ -288,6 +301,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       dashboardProvider.refreshForProjectChange();
       beadsPanelProvider.refreshForProjectChange();
       detailsProvider.refreshForProjectChange();
+      graphPanel.refreshForProjectChange();
       updateStatusBar();
     }),
 
