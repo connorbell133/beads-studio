@@ -5,19 +5,29 @@
  * message, and colouring it would compete with status. */
 
 .leverage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
   flex-shrink: 0;
-  padding: 1px var(--spacing-sm);
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 10px;
   font-size: 10px;
   color: var(--vscode-descriptionForeground);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-.leverage-badge-small {
-  font-size: 9px;
-  padding: 0 var(--spacing-xs);
+/* Outlined, for looser rows that need the badge to hold its own. */
+.leverage-badge-chip {
+  padding: 1px var(--spacing-sm);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 10px;
+}
+
+/* Bare with a hue pip, for dense rows where a border would add noise. */
+.leverage-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
 }
 
 .critical-path {

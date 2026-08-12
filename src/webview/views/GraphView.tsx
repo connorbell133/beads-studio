@@ -18,6 +18,7 @@ import { Loading } from "../common/Loading";
 import { ErrorMessage } from "../common/ErrorMessage";
 import { useRovingFocus } from "../hooks/useRovingFocus";
 import { GraphCanvas } from "./GraphCanvas";
+import { LeverageBadge } from "../common/LeverageBadge";
 
 interface GraphViewProps {
   beads: Bead[];
@@ -161,11 +162,7 @@ export function GraphView({
                 <span className="graph-row-title">{bead.title}</span>
                 <StatusBadge status={bead.status} />
                 {node.ready && <span className="graph-chip ready">ready</span>}
-                {node.leverage > 0 && (
-                  <span className="graph-chip" title="Beads unblocked when this closes">
-                    unblocks {node.leverage}
-                  </span>
-                )}
+                <LeverageBadge leverage={node.leverage} />
               </button>
 
               {node.blockedBy.length > 0 && (

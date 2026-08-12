@@ -23,6 +23,7 @@ import {
 } from "../../graph/readyLane";
 import { Bead, BeadsGraphModel } from "../types";
 import { BlockerChain } from "../common/BlockerChain";
+import { LeverageBadge } from "../common/LeverageBadge";
 import { PriorityBadge } from "../common/PriorityBadge";
 import { StatusBadge } from "../common/StatusBadge";
 import { TypeIcon } from "../common/TypeIcon";
@@ -89,16 +90,7 @@ const Row = React.forwardRef<HTMLDivElement, RowProps>(function Row(
       </div>
       <div className="ready-lane-row-meta">
         <StatusBadge status={bead.status} size="small" />
-        {unblocks !== undefined && unblocks > 0 && (
-          <span className="ready-lane-unblocks" title={`Closing this releases ${unblocks} beads`}>
-            <span
-              className="ready-lane-unblocks-dot"
-              style={{ backgroundColor: GRAPHIC_TOKENS.success }}
-              aria-hidden="true"
-            />
-            unblocks {unblocks}
-          </span>
-        )}
+        <LeverageBadge leverage={unblocks ?? 0} variant="dot" />
         {inCycle && (
           <span className="ready-lane-cycle" title="This bead sits in a dependency cycle">
             <span

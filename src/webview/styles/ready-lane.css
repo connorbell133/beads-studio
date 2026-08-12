@@ -108,7 +108,6 @@
   color: var(--vscode-descriptionForeground);
 }
 
-.ready-lane-unblocks,
 .ready-lane-cycle {
   display: inline-flex;
   align-items: center;
@@ -116,7 +115,6 @@
   white-space: nowrap;
 }
 
-.ready-lane-unblocks-dot,
 .ready-lane-cycle-dot {
   width: 6px;
   height: 6px;
