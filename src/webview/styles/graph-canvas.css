@@ -1,0 +1,231 @@
+/* GraphCanvas - the laid-out dependency DAG.
+ *
+ * Colour comes from theme/tokens.ts, applied as fill and stroke attributes in
+ * the component. What lives here is everything that is not hue: geometry,
+ * type, opacity, and the two motions the graph is allowed.
+ *
+ * The one rule to keep in mind while editing: node labels read in
+ * --vscode-foreground over a 14%-opacity status wash, never on a saturated
+ * chart hue. That is what keeps text above the 4.5:1 bar while the node body
+ * still carries status colour. */
+
+.graph-canvas {
+  display: flex;
+  flex-direction: column;
+  min-height: 320px;
+  margin-bottom: var(--spacing-md);
+}
+
+/* Toolbar ----------------------------------------------------------------- */
+
+.graph-canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  padding-bottom: var(--spacing-sm);
+}
+
+.graph-canvas-lenses,
+.graph-canvas-zoom {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.graph-canvas-zoom {
+  margin-left: auto;
+}
+
+.graph-canvas-lens,
+.graph-canvas-zoom button {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--border-radius);
+  font: inherit;
+  cursor: pointer;
+}
+
+.graph-canvas-lens:hover:not(:disabled),
+.graph-canvas-zoom button:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.graph-canvas-lens:disabled,
+.graph-canvas-zoom button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The active lens is marked by fill and weight as well as by aria-pressed -
+   state is never signalled by colour alone. */
+.graph-canvas-lens.active {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+  border-color: var(--vscode-focusBorder);
+  font-weight: 600;
+}
+
+.graph-canvas-count {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.92em;
+}
+
+.graph-canvas-degraded {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.92em;
+}
+
+/* Canvas ------------------------------------------------------------------ */
+
+.graph-canvas-svg {
+  width: 100%;
+  height: min(60vh, 640px);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--border-radius);
+  background: var(--vscode-editor-background);
+  touch-action: none;
+  cursor: grab;
+  /* Motion 1: the layout fades in once rather than animating every node into
+     place on first paint. */
+  animation: graph-canvas-in var(--transition-normal, 200ms) ease-out;
+}
+
+.graph-canvas-svg:active {
+  cursor: grabbing;
+}
+
+@keyframes graph-canvas-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Edges ------------------------------------------------------------------- */
+
+.graph-canvas-edge {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.75;
+}
+
+.graph-canvas-edge.in-cycle {
+  opacity: 1;
+}
+
+/* Nodes ------------------------------------------------------------------- */
+
+.graph-canvas-node {
+  cursor: pointer;
+  /* Motion 2: switching lens interpolates each node to its new position, so the
+     rollup visibly expands into the full graph instead of becoming a different
+     picture. */
+  transition: transform var(--transition-normal, 250ms) ease-out;
+}
+
+.graph-canvas-node-body {
+  fill-opacity: 0.14;
+  stroke-width: 1;
+  stroke-opacity: 0.7;
+}
+
+.graph-canvas-node:hover .graph-canvas-node-body {
+  fill-opacity: 0.22;
+  stroke-opacity: 1;
+}
+
+.graph-canvas-node.selected .graph-canvas-node-body {
+  fill-opacity: 0.24;
+  stroke: var(--vscode-focusBorder);
+  stroke-opacity: 1;
+  stroke-width: 2;
+}
+
+/* The blast-radius anchor, marked by a ring rather than by hue alone. */
+.graph-canvas-node.focused .graph-canvas-node-body {
+  stroke-width: 2;
+  stroke-opacity: 1;
+}
+
+.graph-canvas-node.in-cycle .graph-canvas-node-body {
+  stroke-dasharray: 5 4;
+  stroke-opacity: 1;
+}
+
+.graph-canvas-node-rail {
+  /* Full-strength status hue, at the 3:1 graphic bar. This is the colour
+     signal; the wash behind the label is only reinforcement. */
+  fill-opacity: 1;
+}
+
+.graph-canvas-node-id,
+.graph-canvas-node-title,
+.graph-canvas-node-flag,
+.graph-canvas-node-meta {
+  font-family: var(--vscode-font-family);
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+.graph-canvas-node-title {
+  fill: var(--vscode-foreground);
+  font-size: 12px;
+}
+
+.graph-canvas-node-id {
+  fill: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+}
+
+.graph-canvas-node-flag,
+.graph-canvas-node-meta {
+  fill: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
+.graph-canvas-node.ready .graph-canvas-node-flag {
+  font-weight: 600;
+}
+
+/* Empty state ------------------------------------------------------------- */
+
+.graph-canvas-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  min-height: 180px;
+  padding: var(--spacing-lg);
+  border: 1px dashed var(--vscode-panel-border);
+  border-radius: var(--border-radius);
+  text-align: center;
+}
+
+.graph-canvas-empty p {
+  margin: 0;
+}
+
+.graph-canvas-empty-hint {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.92em;
+}
+
+/* Motion budget: both graph motions collapse to instant state changes. */
+@media (prefers-reduced-motion: reduce) {
+  .graph-canvas-svg {
+    animation: none;
+  }
+
+  .graph-canvas-node {
+    transition: none;
+  }
+}
