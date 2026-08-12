@@ -1,0 +1,318 @@
+/* ---- Ready lane ----------------------------------------------------------
+   A list, not a card grid. The row is the interaction rather than a container
+   for one, so there is no card chrome - grouping is a header plus spacing.
+
+   Every colour here is a --vscode-* token or a token from theme/tokens.ts
+   applied inline. Hue appears only in dots, borders, and separators; labels
+   read in the editor's own foreground. */
+
+.ready-lane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-sm) 0;
+  outline: none;
+}
+
+/* ---- Groups ---- */
+
+.ready-lane-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.ready-lane-group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: 0 0 var(--spacing-xs);
+  padding: 0 var(--spacing-md);
+  font-size: 0.9em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.ready-lane-group-count {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.8;
+}
+
+/* ---- Rows ----------------------------------------------------------------
+   Three treatments that have to stay tellable apart: hover is a wash, focus is
+   the shared ring, and selection is a persistent left bar plus the editor's own
+   selection background. Selection is drawn from a prop rather than from focus,
+   so it survives focus moving to another surface - without that, cross-surface
+   selection reads as broken. */
+
+.ready-lane-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.ready-lane-row:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.ready-lane-row:focus-visible {
+  outline-offset: -2px;
+}
+
+.ready-lane-row-selected {
+  background-color: var(--vscode-list-inactiveSelectionBackground);
+  border-left-color: var(--vscode-focusBorder);
+}
+
+.ready-lane-row-selected:hover {
+  background-color: var(--vscode-list-activeSelectionBackground);
+}
+
+.ready-lane-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+
+.ready-lane-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-foreground);
+}
+
+.ready-lane-id {
+  flex: 0 0 auto;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.ready-lane-row-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  padding-left: calc(13px + var(--spacing-sm));
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.ready-lane-unblocks,
+.ready-lane-cycle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  white-space: nowrap;
+}
+
+.ready-lane-unblocks-dot,
+.ready-lane-cycle-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+/* ---- Blocker chain -------------------------------------------------------
+   The one idea this extension has of its own: a dependency edge is a visible
+   object, not a badge that summarizes one away. */
+
+.blocker-chain {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  padding-left: calc(13px + var(--spacing-sm));
+  font-size: 0.85em;
+}
+
+.blocker-chain-label {
+  color: var(--vscode-descriptionForeground);
+}
+
+.blocker-chain-sep {
+  user-select: none;
+}
+
+.blocker-chain-hop {
+  padding: 0 var(--spacing-xs);
+  border: 1px solid var(--vscode-widget-border, transparent);
+  border-radius: var(--border-radius);
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-textLink-foreground);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: inherit;
+  cursor: pointer;
+  /* Motion 1 of 3: the chain slides in, staggered per hop, so depth is felt as
+     well as read. `backwards` holds the start state through the delay. */
+  animation: blocker-chain-hop-in 150ms ease-out backwards;
+}
+
+.blocker-chain-hop:hover {
+  color: var(--vscode-textLink-activeForeground);
+  background: var(--vscode-list-hoverBackground);
+}
+
+/* A blocker the payload never contained. Named rather than hidden - it is the
+   reason the degraded notice exists. */
+.blocker-chain-hop-unknown {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.blocker-chain-hidden {
+  padding: 0 var(--spacing-xs);
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+}
+
+@keyframes blocker-chain-hop-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- Notices ---- */
+
+.ready-lane-degraded {
+  margin: 0 var(--spacing-md) var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-left: 2px solid var(--vscode-charts-yellow);
+  background: var(--vscode-editorWidget-background);
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.ready-lane-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  align-items: flex-start;
+  margin: 0 var(--spacing-md);
+  padding: var(--spacing-sm);
+  border-left: 2px solid var(--vscode-charts-red);
+  background: var(--vscode-editorWidget-background);
+}
+
+.ready-lane-error-op {
+  font-weight: 600;
+}
+
+.ready-lane-error-detail {
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Empty states --------------------------------------------------------
+   These teach the next action rather than apologizing for the absence of one. */
+
+.ready-lane-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.ready-lane-empty-line {
+  margin: 0;
+  color: var(--vscode-foreground);
+}
+
+.ready-lane-empty-hint {
+  margin: 0;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.ready-lane-empty code {
+  padding: 0 var(--spacing-xs);
+  border-radius: var(--border-radius);
+  background: var(--vscode-textCodeBlock-background);
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.ready-lane-action {
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: none;
+  border-radius: var(--border-radius);
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.ready-lane-action:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+/* ---- Loading -------------------------------------------------------------
+   Skeleton rows at the real row height, not a spinner. The lane's length is
+   roughly predictable, so the thing to avoid is layout shift on arrival. */
+
+.ready-lane-skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: 0 var(--spacing-md);
+}
+
+.ready-lane-skeleton {
+  height: 34px;
+  border-radius: var(--border-radius);
+  background: linear-gradient(
+    90deg,
+    var(--vscode-editorWidget-background) 25%,
+    var(--vscode-list-hoverBackground) 37%,
+    var(--vscode-editorWidget-background) 63%
+  );
+  background-size: 400% 100%;
+  animation: ready-lane-shimmer 1.4s ease-in-out infinite;
+}
+
+.ready-lane-skeleton:nth-child(even) {
+  opacity: 0.75;
+}
+
+@keyframes ready-lane-shimmer {
+  from {
+    background-position: 100% 50%;
+  }
+  to {
+    background-position: 0 50%;
+  }
+}
+
+/* Reduced motion collapses the animations globally; the shimmer would otherwise
+   be left frozen mid-gradient, so it settles on a flat block instead. */
+@media (prefers-reduced-motion: reduce) {
+  .ready-lane-skeleton {
+    background: var(--vscode-editorWidget-background);
+  }
+}
+
+/* Forced-colours themes drop background painting, so the selected row would
+   lose its only marker. The border carries it there. */
+@media (forced-colors: active) {
+  .ready-lane-row-selected {
+    border-left-color: Highlight;
+  }
+}
