@@ -155,11 +155,13 @@ export function GraphCanvas({
   focusFindToken,
   className,
 }: GraphCanvasProps): React.ReactElement {
-  // Chosen once from the data rather than fixed, so a project whose every edge
-  // sits inside one epic does not open on a view with nothing in it.
+  // Chosen from the data rather than fixed, so a project whose every edge sits
+  // inside one epic does not open on a view with nothing in it.
   const [ownLens, setOwnLens] = useState<GraphLens>(() =>
     graph ? chooseInitialLens(graph, beads) : DEFAULT_LENS
   );
+  // Once the user picks a lens it is theirs; auto-selection stops for good.
+  const lensPinned = useRef(false);
   const requestedLens = lens ?? ownLens;
 
   /** Set once the user has read the density notice and asked for it anyway. */
@@ -208,6 +210,21 @@ export function GraphCanvas({
   const nodes = view?.result.nodes ?? [];
   const edges = view?.result.edges ?? [];
   const drawnLens = view?.result.lens ?? requestedLens;
+
+  // Re-choose when the current lens turns out to have nothing to draw.
+  //
+  // The initial pick happens on mount, which is the wrong moment twice over: the
+  // canvas can mount before data arrives, and switching projects keeps a lens
+  // chosen for the previous one. Reacting to "this lens is drawing no blocking
+  // links, and another would" fixes both, costs nothing while the view is
+  // useful, and is idempotent - the same data always resolves to the same lens,
+  // so setting it again is a no-op rather than a loop.
+  useEffect(() => {
+    if (lens !== undefined || lensPinned.current || !graph) return;
+    if (view?.result.edges.some((edge) => edge.kind === "blocks")) return;
+    const better = chooseInitialLens(graph, beads);
+    if (better !== requestedLens) setOwnLens(better);
+  }, [graph, beads, view, lens, requestedLens]);
   const bounds = view?.laidOut.bounds;
   const positions = view?.laidOut.positions ?? NO_POSITIONS;
 
@@ -415,6 +432,7 @@ export function GraphCanvas({
   };
 
   const chooseLens = (next: GraphLens): void => {
+    lensPinned.current = true;
     if (lens === undefined) setOwnLens(next);
     onLensChange?.(next);
   };
