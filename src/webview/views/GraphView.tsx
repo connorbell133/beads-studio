@@ -14,6 +14,7 @@ import { StatusBadge } from "../common/StatusBadge";
 import { TypeIcon } from "../common/TypeIcon";
 import { Loading } from "../common/Loading";
 import { ErrorMessage } from "../common/ErrorMessage";
+import { useRovingFocus } from "../hooks/useRovingFocus";
 
 interface GraphViewProps {
   beads: Bead[];
@@ -54,6 +55,14 @@ export function GraphView({
     () => (graph ? Object.values(graph.nodes).reduce((n, x) => n + x.blockedBy.length, 0) : 0),
     [graph]
   );
+
+  // The whole list is one tab stop; arrows move within it, and typing a letter
+  // jumps to the next matching bead - the same contract as a VS Code tree.
+  const labels = useMemo(
+    () => ordered.map((node) => byId.get(node.id)?.title ?? node.id),
+    [ordered, byId]
+  );
+  const roving = useRovingFocus(ordered.length, labels);
 
   if (error) {
     return <ErrorMessage message={error} onRetry={onRetry} />;
@@ -97,8 +106,18 @@ export function GraphView({
         )}
       </header>
 
-      <ul className="graph-adjacency" aria-label="Beads and their blockers">
-        {ordered.map((node) => {
+      <ul
+        className="graph-adjacency"
+        aria-label="Beads and their blockers"
+        onKeyDown={(event) => {
+          if (roving.onKeyDown(event)) {
+            // Move real focus to follow the roving tab stop.
+            const next = event.currentTarget.querySelectorAll<HTMLElement>(".graph-row-main");
+            next[roving.activeIndex]?.focus();
+          }
+        }}
+      >
+        {ordered.map((node, index) => {
           const bead = byId.get(node.id);
           if (!bead) return null;
           const isSelected = node.id === selectedBeadId;
@@ -113,6 +132,8 @@ export function GraphView({
               <button
                 type="button"
                 className="graph-row-main"
+                tabIndex={roving.tabIndexFor(index)}
+                onFocus={() => roving.setActiveIndex(index)}
                 onClick={() => onSelectBead(node.id)}
                 aria-current={isSelected ? "true" : undefined}
               >

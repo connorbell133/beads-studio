@@ -3003,3 +3003,49 @@ textarea {
     color: CanvasText;
   }
 }
+
+/* ---- Focus ---------------------------------------------------------------
+   The webview had no focus styling at all, so keyboard users could not see
+   where they were. One selector list rather than per-component rules, because
+   a focus ring that only some components have is worse than none - it reads as
+   the ring disappearing.
+
+   :focus-visible rather than :focus so a mouse click does not leave a ring
+   behind, which is why authors disable focus styling in the first place. */
+:where(
+  a,
+  button,
+  input,
+  textarea,
+  [tabindex]:not([tabindex="-1"]),
+  [role="button"],
+  [role="option"],
+  [role="tab"]
+):focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+  border-radius: var(--border-radius);
+}
+
+/* Rows are full-bleed, so an offset ring would be clipped by the neighbour.
+   Inset it instead of losing it. */
+.graph-row-main:focus-visible,
+.bead-row:focus-visible,
+.kanban-card:focus-visible {
+  outline-offset: -2px;
+}
+
+/* ---- Motion --------------------------------------------------------------
+   Three motions carry meaning in this UI, and each has a still equivalent.
+   Under a reduced-motion preference the state change still happens - it just
+   arrives immediately rather than being animated into place. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
