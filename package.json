@@ -95,6 +95,18 @@
         "command": "beads.copyBeadId",
         "title": "Beads: Copy Issue ID",
         "icon": "$(copy)"
+      },
+      {
+        "command": "beads.showReady",
+        "title": "Beads: Show Ready Work"
+      },
+      {
+        "command": "beads.findInGraph",
+        "title": "Beads: Find in Dependency Graph"
+      },
+      {
+        "command": "beads.toggleTreeMode",
+        "title": "Beads: Toggle Tree View"
       }
     ],
     "menus": {
@@ -154,7 +166,24 @@
           "description": "Delay in milliseconds before showing bead description tooltip on hover. Set to 0 to disable tooltips."
         }
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "beads.showReady",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r"
+      },
+      {
+        "command": "beads.openGraph",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g"
+      },
+      {
+        "command": "beads.findInGraph",
+        "key": "ctrl+alt+f",
+        "mac": "cmd+alt+f"
+      }
+    ]
   },
   "scripts": {
     "compile": "bun run compile:extension && bun run compile:webview",

@@ -29,6 +29,11 @@ export class BeadsPanelViewProvider extends BaseViewProvider {
     super(extensionUri, projectManager, logger.child("Panel"));
   }
 
+  /** Flips the Issues list between flat and tree presentation. */
+  public toggleTreeMode(): void {
+    this.postMessage({ type: "toggleTreeMode" });
+  }
+
   /**
    * Set the selected bead ID and notify webview
    */

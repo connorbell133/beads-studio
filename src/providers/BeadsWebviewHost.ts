@@ -218,6 +218,16 @@ export abstract class BeadsWebviewHost {
     }
   }
 
+  /**
+   * Reflects a selection change made anywhere in the extension.
+   *
+   * `origin` names the surface that caused it, so a surface that already shows
+   * the bead where the user clicked can skip revealing it again.
+   */
+  public applySelection(beadId: string | null, origin: string): void {
+    this.postMessage({ type: "setSelectedBeadId", beadId, origin });
+  }
+
   /** Sends a message to the webview. A disposed surface silently drops it. */
   protected postMessage(message: ExtensionToWebviewMessage): void {
     this.webview?.postMessage(message);

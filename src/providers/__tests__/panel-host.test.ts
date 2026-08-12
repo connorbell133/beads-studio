@@ -1,5 +1,19 @@
 import * as vscode from "vscode";
-import { createdPanels } from "../../__mocks__/vscode";
+
+// Read the recorder through the same specifier the code under test uses.
+// Importing "../../__mocks__/vscode" directly can resolve to a second module
+// instance - jest only dedupes the two specifiers when another suite happened
+// to instantiate the module first in the same worker, which made these tests
+// pass or fail depending on worker assignment.
+const { createdPanels } = vscode as unknown as {
+  createdPanels: Array<{
+    viewType: string;
+    posted: unknown[];
+    revealCount: number;
+    webview: { html: string };
+    fireDispose: () => void;
+  }>;
+};
 import { BeadsPanelHost, LoadReason } from "../BeadsPanelHost";
 import { BeadsProjectManager } from "../../backend/BeadsProjectManager";
 import { Logger } from "../../utils/logger";

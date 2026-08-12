@@ -12,6 +12,7 @@ import { DashboardViewProvider } from "./providers/DashboardViewProvider";
 import { BeadsPanelViewProvider } from "./providers/BeadsPanelViewProvider";
 import { BeadDetailsViewProvider } from "./providers/BeadDetailsViewProvider";
 import { BeadsGraphPanel } from "./providers/BeadsGraphPanel";
+import { BeadsSelection } from "./providers/BeadsSelection";
 import { createLogger, Logger } from "./utils/logger";
 
 let log: Logger;
@@ -20,6 +21,7 @@ let dashboardProvider: DashboardViewProvider;
 let beadsPanelProvider: BeadsPanelViewProvider;
 let detailsProvider: BeadDetailsViewProvider;
 let graphPanel: BeadsGraphPanel;
+let selection: BeadsSelection;
 let statusBar: vscode.StatusBarItem;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -75,6 +77,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   graphPanel = new BeadsGraphPanel(context.extensionUri, projectManager, log);
   context.subscriptions.push({ dispose: () => graphPanel.dispose() });
 
+  // One selected bead across every surface. Six surfaces each holding their own
+  // selection would be six places to lose your place.
+  selection = new BeadsSelection();
+  context.subscriptions.push(selection);
+  context.subscriptions.push(
+    selection.onDidChange(({ beadId, origin }) => {
+      for (const surface of [dashboardProvider, beadsPanelProvider, detailsProvider, graphPanel]) {
+        surface.applySelection(beadId, origin);
+      }
+    })
+  );
+
   // Register webview providers
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("beadsDashboard", dashboardProvider, {
@@ -99,7 +113,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand("beads.openGraph", (beadId?: string) => {
-      graphPanel.show(beadId);
+      graphPanel.show(beadId ?? selection.selected ?? undefined);
+    }),
+
+    vscode.commands.registerCommand("beads.showReady", () => {
+      vscode.commands.executeCommand("beadsDashboard.focus");
+    }),
+
+    vscode.commands.registerCommand("beads.findInGraph", () => {
+      graphPanel.show(selection.selected ?? undefined);
+      graphPanel.requestFind();
+    }),
+
+    vscode.commands.registerCommand("beads.toggleTreeMode", () => {
+      beadsPanelProvider.toggleTreeMode();
     }),
 
     vscode.commands.registerCommand("beads.openBeadDetails", async (beadId?: string) => {
@@ -136,6 +163,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (beadId) {
         detailsProvider.showBead(beadId);
         beadsPanelProvider.setSelectedBead(beadId);
+        selection.select(beadId, "beads.openBeadDetails");
       }
     }),
 
@@ -298,6 +326,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     projectManager.onActiveProjectChanged(() => {
       beadsPanelProvider.setSelectedBead(null); // Clear selection on project switch
+      selection.clear("projectChange");
       dashboardProvider.refreshForProjectChange();
       beadsPanelProvider.refreshForProjectChange();
       detailsProvider.refreshForProjectChange();

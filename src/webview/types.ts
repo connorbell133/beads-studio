@@ -119,7 +119,9 @@ export type ExtensionMessage =
   | { type: "setProject"; project: BeadsProject | null }
   | { type: "setBeads"; beads: Bead[] }
   | { type: "setBead"; bead: Bead | null }
-  | { type: "setSelectedBeadId"; beadId: string | null }
+  | { type: "setSelectedBeadId"; beadId: string | null; origin?: string }
+  | { type: "focusGraphFind" }
+  | { type: "toggleTreeMode" }
   | { type: "setSummary"; summary: BeadsSummary }
   | { type: "setGraph"; graph: BeadsGraphModel }
   | { type: "setProjects"; projects: BeadsProject[] }

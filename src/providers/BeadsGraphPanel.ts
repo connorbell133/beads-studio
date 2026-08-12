@@ -39,6 +39,16 @@ export class BeadsGraphPanel extends BeadsPanelHost {
     }
   }
 
+  /**
+   * Asks the graph surface to open its find affordance.
+   *
+   * The command palette is where VS Code users already look for an accelerator,
+   * so "find in graph" is a command rather than only a button in the tab.
+   */
+  public requestFind(): void {
+    this.postMessage({ type: "focusGraphFind" });
+  }
+
   protected async loadData(reason: LoadReason = "background"): Promise<void> {
     const thisRequest = ++this.loadSequence;
     const showLoading = reason !== "background";

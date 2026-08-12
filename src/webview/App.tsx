@@ -31,6 +31,8 @@ interface AppState {
   beads: Bead[];
   selectedBead: Bead | null;
   selectedBeadId: string | null;
+  /** Surface that caused the current selection; drives reveal-vs-stay. */
+  selectionOrigin: string | null;
   summary: BeadsSummary | null;
   graph: BeadsGraphModel | null;
   loading: boolean;
@@ -45,6 +47,7 @@ const initialState: AppState = {
   beads: [],
   selectedBead: null,
   selectedBeadId: null,
+  selectionOrigin: null,
   summary: null,
   graph: null,
   loading: true,
@@ -76,7 +79,11 @@ export function App(): React.ReactElement {
         setState((prev) => ({ ...prev, selectedBead: message.bead }));
         break;
       case "setSelectedBeadId":
-        setState((prev) => ({ ...prev, selectedBeadId: (message as { type: "setSelectedBeadId"; beadId: string | null }).beadId }));
+        setState((prev) => ({
+          ...prev,
+          selectedBeadId: message.beadId,
+          selectionOrigin: message.origin ?? null,
+        }));
         break;
       case "setSummary":
         setState((prev) => ({ ...prev, summary: message.summary }));
