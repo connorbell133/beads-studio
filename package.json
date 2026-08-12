@@ -2,7 +2,7 @@
   "name": "beads-ui",
   "displayName": "Beads UI",
   "description": "Dashboard, kanban board, and dependency graph for the Beads (bd) issue tracker",
-  "version": "0.14.4",
+  "version": "1.0.0",
   "publisher": "connorbell133",
   "license": "Apache-2.0",
   "icon": "resources/icon.png",
