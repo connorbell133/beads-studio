@@ -12,13 +12,20 @@
  */
 
 import React from "react";
-import { GraphLens, GRAPH_LENSES, LENS_LABELS } from "../../graph/lens";
+import { EpicOption, GraphLens, GRAPH_LENSES, LENS_LABELS } from "../../graph/lens";
+import { Dropdown, DropdownItem } from "./Dropdown";
 
 export interface GraphToolbarProps {
   lens: GraphLens;
   onLensChange: (lens: GraphLens) => void;
   /** Blast radius needs a bead to radiate from; without one its button explains why. */
   anchored: boolean;
+
+  /** What the epic lens can anchor on. Empty disables that lens's tab. */
+  epics: EpicOption[];
+  /** The epic the epic lens is anchored on. */
+  epicId: string | null;
+  onEpicChange: (epicId: string) => void;
 
   query: string;
   onQueryChange: (query: string) => void;
@@ -45,6 +52,9 @@ export function GraphToolbar({
   lens,
   onLensChange,
   anchored,
+  epics,
+  epicId,
+  onEpicChange,
   query,
   onQueryChange,
   onQueryKeyDown,
@@ -65,24 +75,60 @@ export function GraphToolbar({
   return (
     <div className="graph-canvas-toolbar">
       <div className="graph-canvas-lenses" role="group" aria-label="Graph lens">
-        {GRAPH_LENSES.map((option) => (
-          <button
-            key={option}
-            type="button"
-            className={`graph-canvas-lens${option === lens ? " active" : ""}`}
-            aria-pressed={option === lens}
-            disabled={option === "blast-radius" && !anchored}
-            title={
-              option === "blast-radius" && !anchored
-                ? "Select a bead to see what it touches"
-                : undefined
-            }
-            onClick={() => onLensChange(option)}
-          >
-            {LENS_LABELS[option]}
-          </button>
-        ))}
+        {GRAPH_LENSES.map((option) => {
+          const disabled =
+            (option === "blast-radius" && !anchored) || (option === "epic" && epics.length === 0);
+          return (
+            <button
+              key={option}
+              type="button"
+              className={`graph-canvas-lens${option === lens ? " active" : ""}`}
+              aria-pressed={option === lens}
+              disabled={disabled}
+              title={
+                option === "blast-radius" && !anchored
+                  ? "Select a bead to see what it touches"
+                  : option === "epic" && epics.length === 0
+                    ? "No epics in this project yet"
+                    : undefined
+              }
+              onClick={() => onLensChange(option)}
+            >
+              {LENS_LABELS[option]}
+            </button>
+          );
+        })}
       </div>
+
+      {/* Which epic, but only while the answer matters. The picker names the
+          epic rather than saying "Epic:" - the active tab already says what
+          kind of thing it is. */}
+      {lens === "epic" && epics.length > 0 && (
+        <Dropdown
+          className="graph-canvas-epic-picker"
+          triggerClassName="graph-canvas-epic-trigger"
+          title="Choose which epic to draw"
+          trigger={
+            <span className="graph-canvas-epic-label">
+              {epics.find((epic) => epic.id === epicId)?.label ?? "Choose an epic"}
+            </span>
+          }
+        >
+          {epics.map((epic) => (
+            <DropdownItem
+              key={epic.id}
+              active={epic.id === epicId}
+              onClick={() => onEpicChange(epic.id)}
+              title={`${epic.id} — ${epic.label}`}
+            >
+              <span className="graph-canvas-epic-option">{epic.label}</span>
+              <span className="graph-canvas-epic-progress">
+                {epic.closed}/{epic.total}
+              </span>
+            </DropdownItem>
+          ))}
+        </Dropdown>
+      )}
 
       <div className="graph-canvas-find">
         <input

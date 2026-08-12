@@ -10,6 +10,11 @@
  *                 stay inside one epic are dropped, because "this epic blocks
  *                 itself" is noise. This is the default lens - a 500-node
  *                 hairball on open is a decision-paralysis surface.
+ *   epic          One epic, opened up: the epic and every descendant, with each
+ *                 member tethered to its container so the picture converges on
+ *                 the epic, plus the blocking edges among members. Answers
+ *                 "what is inside this epic and in what order". Anchored by an
+ *                 epic id chosen in the toolbar, not by the selection.
  *   full          Every visible bead, every blocking edge between two of them.
  *   blast-radius  The transitive closure of blockage around one bead, upstream
  *                 and downstream. Answers "what does this touch".
@@ -39,7 +44,7 @@ import { BeadsGraphModel, COORDINATION_TYPES } from "./types";
 /** Edge keys join two ids; no bd id contains a tab. */
 const EDGE_KEY_SEP = "\t";
 
-export const GRAPH_LENSES = ["epic-rollup", "full", "blast-radius"] as const;
+export const GRAPH_LENSES = ["epic-rollup", "epic", "full", "blast-radius"] as const;
 
 export type GraphLens = (typeof GRAPH_LENSES)[number];
 
@@ -48,6 +53,7 @@ export const DEFAULT_LENS: GraphLens = "epic-rollup";
 
 export const LENS_LABELS: Record<GraphLens, string> = {
   "epic-rollup": "Epics",
+  epic: "One epic",
   full: "All beads",
   "blast-radius": "Blast radius",
 };
@@ -119,7 +125,7 @@ export interface LensResult {
   lens: GraphLens;
   nodes: LensNode[];
   edges: LensEdge[];
-  /** The blast-radius anchor, when the lens has a usable one. */
+  /** The lens's anchor, when it has a usable one: the blast-radius focus, or the chosen epic. */
   focusId?: string;
   /** Beads in the model that this lens does not represent at all. */
   omitted: number;
@@ -151,10 +157,72 @@ export interface LensOptions {
   lens: GraphLens;
   /** Anchor for `blast-radius`. Without one, that lens has nothing to draw. */
   focusId?: string | null;
+  /** Anchor for `epic`. Without one, that lens has nothing to draw. */
+  epicId?: string | null;
   /** Types kept off every lens. Defaults to the coordination types. */
   hiddenTypes?: readonly string[];
   /** Hop limit for `blast-radius`. Unlimited by default. */
   depth?: number;
+}
+
+/** One entry in the epic picker: an epic and how far along its subtree is. */
+export interface EpicOption {
+  id: string;
+  /** Title when there is one, id otherwise. Never empty. */
+  label: string;
+  /** Descendants, the epic itself excluded. */
+  total: number;
+  /** Closed descendants. */
+  closed: number;
+}
+
+/**
+ * The epics a project offers the epic lens, in id order.
+ *
+ * "Epic" here means a bead that contains work: anything typed `epic`, plus any
+ * bead that is some visible bead's parent. Typing is convention, containment is
+ * fact, and a picker built on the convention alone would omit a task with
+ * subtasks that the tree view happily renders as a container.
+ */
+export function listEpics(model: BeadsGraphModel, beads: LensBead[]): EpicOption[] {
+  const context = buildContext(model, beads, undefined);
+  const parents = new Set<string>();
+  for (const id of context.ids) {
+    const parent = model.nodes[id]?.parent;
+    if (parent && context.beads.has(parent)) parents.add(parent);
+  }
+
+  return context.ids
+    .filter((id) => parents.has(id) || context.beads.get(id)?.type === "epic")
+    .sort(byId)
+    .map((id) => {
+      const bead = context.beads.get(id) as LensBead;
+      const members = descendantsOf(model, context, id);
+      return {
+        id,
+        label: bead.title && bead.title.length > 0 ? bead.title : id,
+        total: members.length,
+        closed: members.filter((member) => context.beads.get(member)?.status === "closed").length,
+      };
+    });
+}
+
+/**
+ * Every visible bead whose parent chain reaches `epicId`, in model order.
+ * A parent cycle terminates the walk rather than looping it.
+ */
+function descendantsOf(model: BeadsGraphModel, context: Context, epicId: string): string[] {
+  return context.ids.filter((id) => {
+    if (id === epicId) return false;
+    const seen = new Set<string>([id]);
+    let current = model.nodes[id]?.parent;
+    while (current && context.beads.has(current) && !seen.has(current)) {
+      if (current === epicId) return true;
+      seen.add(current);
+      current = model.nodes[current]?.parent;
+    }
+    return false;
+  });
 }
 
 interface Context {
@@ -181,6 +249,8 @@ export function applyLens(
   switch (options.lens) {
     case "full":
       return finish(model, context, "full", context.ids, undefined, total);
+    case "epic":
+      return epicDetail(model, context, options, total);
     case "blast-radius":
       return blastRadius(model, context, options, total);
     case "epic-rollup":
@@ -286,6 +356,44 @@ function epicRollup(model: BeadsGraphModel, context: Context, total: number): Le
     { containerOf, members },
     total
   );
+}
+
+/**
+ * One epic opened up: the epic itself plus every visible descendant, each
+ * member drawn as its own node.
+ *
+ * The containment tethers run member -> container here, the reverse of the
+ * full lens, so the left-to-right layout converges the whole subtree on the
+ * epic instead of fanning out from it: the epic reads as the destination the
+ * work flows into, which is what "0 of 7 closed" on its card is a summary of.
+ * Blocking edges among members keep their usual direction, so sequencing and
+ * containment point the same way and the picture stays a DAG.
+ */
+function epicDetail(
+  model: BeadsGraphModel,
+  context: Context,
+  options: LensOptions,
+  total: number
+): LensResult {
+  const epicId = options.epicId ?? undefined;
+  if (!epicId || !context.beads.has(epicId)) {
+    return { lens: "epic", nodes: [], edges: [], omitted: total };
+  }
+
+  const members = descendantsOf(model, context, epicId);
+  const result = finish(model, context, "epic", [epicId, ...members], undefined, total);
+
+  // The epic's own card carries the rollup, so the lens answers "how far
+  // along" without a separate header.
+  const epic = result.nodes.find((node) => node.id === epicId);
+  if (epic && members.length > 0) {
+    epic.progress = {
+      closed: members.filter((member) => context.beads.get(member)?.status === "closed").length,
+      total: members.length,
+    };
+  }
+  result.focusId = epicId;
+  return result;
 }
 
 /**
@@ -427,12 +535,18 @@ function finish(
   // Containment, but only where the members are drawn as themselves. A rolled
   // epic has already absorbed its members, so a tether there would be a
   // self-loop; and blast-radius answers "what does this reach", where a
-  // containment link is not part of the answer.
-  if (lens === "full") {
+  // containment link is not part of the answer. The epic lens reverses the
+  // tether (member -> container) so layout converges the subtree on the epic;
+  // see `epicDetail`.
+  if (lens === "full" || lens === "epic") {
     for (const id of context.ids) {
       const parent = model.nodes[id]?.parent;
       if (!parent || !shown.has(parent) || !shown.has(id)) continue;
-      edges.push({ blocker: parent, blocked: id, weight: 1, rolled: false, kind: "contains" });
+      edges.push(
+        lens === "epic"
+          ? { blocker: id, blocked: parent, weight: 1, rolled: false, kind: "contains" }
+          : { blocker: parent, blocked: id, weight: 1, rolled: false, kind: "contains" }
+      );
     }
     edges.sort(
       (a, b) =>

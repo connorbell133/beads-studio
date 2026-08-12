@@ -399,3 +399,67 @@
 .graph-canvas-svg.isolating .graph-canvas-edge.contains {
   opacity: 0.12;
 }
+
+/* The tether's name, drawn only on the epic lens where the tethers are the
+   point. Same muted voice as the tether itself. */
+.graph-canvas-edge-label {
+  fill: var(--vscode-descriptionForeground);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+  pointer-events: none;
+  user-select: none;
+}
+
+.graph-canvas-edge-label.dimmed {
+  opacity: 0.12;
+}
+
+/* Epic picker -------------------------------------------------------------- */
+
+/* Sits beside the lens tabs while the epic lens is active. The trigger reads
+   like a lens tab that happens to name an epic, because that is what it is. */
+.graph-canvas-epic-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  max-width: 32ch;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--border-radius);
+  font: inherit;
+  cursor: pointer;
+}
+
+.graph-canvas-epic-trigger:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.graph-canvas-epic-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-canvas-epic-picker .dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  width: 100%;
+}
+
+.graph-canvas-epic-option {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 36ch;
+}
+
+.graph-canvas-epic-progress {
+  color: var(--vscode-descriptionForeground);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}

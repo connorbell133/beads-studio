@@ -5,7 +5,14 @@
  */
 
 import { deriveGraph } from "../BeadsGraph";
-import { applyLens, chooseInitialLens, DEFAULT_LENS, GRAPH_LENSES, LensBead } from "../lens";
+import {
+  applyLens,
+  chooseInitialLens,
+  DEFAULT_LENS,
+  GRAPH_LENSES,
+  LensBead,
+  listEpics,
+} from "../lens";
 import type { BeadsGraphModel, GraphInputEdge, GraphInputNode } from "../types";
 
 const raw = (id: string, over: Partial<GraphInputNode> = {}): GraphInputNode => ({
@@ -558,5 +565,132 @@ describe("chooseInitialLens", () => {
     );
 
     expect(chooseInitialLens(model, beads)).toBe("epic-rollup");
+  });
+});
+
+describe("epic lens", () => {
+  // One epic with a nested container inside it, one bead outside it, and a
+  // dependency crossing the epic boundary.
+  const project = build(
+    [
+      raw("e1", { issue_type: "epic" }),
+      raw("s1", { parent: "e1" }),
+      raw("t1", { parent: "s1", status: "closed" }),
+      raw("t2", { parent: "e1" }),
+      raw("out"),
+    ],
+    // t2 waits on s1 - both open members. (An edge from the closed t1 would
+    // not draw: the derivation only keeps open blockers.)
+    [blocks("t2", "s1"), blocks("out", "t2")]
+  );
+
+  it("draws the epic and every descendant, tethered so the subtree converges on it", () => {
+    const result = applyLens(project.model, project.beads, { lens: "epic", epicId: "e1" });
+
+    expect(ids(result)).toEqual(["e1", "s1", "t1", "t2"]);
+    expect(result.focusId).toBe("e1");
+    // Tethers run member -> container, the reverse of the full lens, so a
+    // left-to-right layout puts the epic where the work flows to.
+    expect(
+      result.edges
+        .filter((edge) => edge.kind === "contains")
+        .map((edge) => `${edge.blocker}->${edge.blocked}`)
+        .sort()
+    ).toEqual(["s1->e1", "t1->s1", "t2->e1"]);
+  });
+
+  it("keeps blocking edges among members and drops those crossing the boundary", () => {
+    const result = applyLens(project.model, project.beads, { lens: "epic", epicId: "e1" });
+
+    expect(
+      result.edges
+        .filter((edge) => edge.kind === "blocks")
+        .map((edge) => `${edge.blocker}->${edge.blocked}`)
+    ).toEqual(["s1->t2"]);
+    // `out` is not represented at all, so the count says so.
+    expect(result.omitted).toBe(1);
+  });
+
+  it("puts the subtree's progress on the epic's own card", () => {
+    const result = applyLens(project.model, project.beads, { lens: "epic", epicId: "e1" });
+    const epic = result.nodes.find((node) => node.id === "e1");
+    const member = result.nodes.find((node) => node.id === "t2");
+
+    expect(epic?.progress).toEqual({ closed: 1, total: 3 });
+    expect(epic?.rolled).toBe(false);
+    expect(member?.progress).toBeUndefined();
+  });
+
+  it("has nothing to draw without an epic", () => {
+    const result = applyLens(project.model, project.beads, { lens: "epic" });
+
+    expect(result.nodes).toEqual([]);
+    expect(result.edges).toEqual([]);
+    expect(result.omitted).toBe(5);
+  });
+
+  it("has nothing to draw when the epic id is not a visible bead", () => {
+    const result = applyLens(project.model, project.beads, { lens: "epic", epicId: "nope" });
+
+    expect(result.nodes).toEqual([]);
+  });
+
+  it("draws a childless epic alone rather than pretending it does not exist", () => {
+    const result = applyLens(project.model, project.beads, { lens: "epic", epicId: "t2" });
+
+    // t2 contains nothing, so the lens is one node with no progress line.
+    expect(ids(result)).toEqual(["t2"]);
+    expect(result.nodes[0].progress).toBeUndefined();
+  });
+
+  it("terminates on a parent cycle instead of looping", () => {
+    const { model, beads } = build([
+      raw("a", { parent: "b" }),
+      raw("b", { parent: "a" }),
+      raw("e", { issue_type: "epic" }),
+    ]);
+
+    const result = applyLens(model, beads, { lens: "epic", epicId: "e" });
+
+    // Neither ring member reaches e; the walk must not hang deciding that.
+    expect(ids(result)).toEqual(["e"]);
+  });
+});
+
+describe("listEpics", () => {
+  it("offers typed epics and implicit containers, with subtree progress", () => {
+    const { model, beads } = build([
+      raw("e1", { issue_type: "epic" }),
+      raw("s1", { parent: "e1" }),
+      raw("t1", { parent: "s1", status: "closed" }),
+      raw("t2", { parent: "e1" }),
+      raw("loose"),
+    ]);
+
+    expect(listEpics(model, beads)).toEqual([
+      { id: "e1", label: "Bead e1", total: 3, closed: 1 },
+      { id: "s1", label: "Bead s1", total: 1, closed: 1 },
+    ]);
+  });
+
+  it("offers an empty epic - it is still a place work will go", () => {
+    const { model, beads } = build([raw("e1", { issue_type: "epic" }), raw("loose")]);
+
+    expect(listEpics(model, beads)).toEqual([{ id: "e1", label: "Bead e1", total: 0, closed: 0 }]);
+  });
+
+  it("never offers a coordination bead as an epic", () => {
+    const { model, beads } = build([
+      raw("g", { issue_type: "gate" }),
+      raw("t", { parent: "g" }),
+    ]);
+
+    expect(listEpics(model, beads)).toEqual([]);
+  });
+
+  it("returns nothing for a flat project", () => {
+    const { model, beads } = build([raw("a"), raw("b")]);
+
+    expect(listEpics(model, beads)).toEqual([]);
   });
 });

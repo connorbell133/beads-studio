@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Dependency graph in an editor tab, opened with `Beads: Open Dependency Graph` or the Details panel's "View in graph"
+- "One epic" graph lens: pick an epic from a toolbar dropdown and see its subtree converge on it via "part of" tethers, with closed-of-total progress on the epic's card (vsbeads-f38)
 - Ready lane on the dashboard: what can be picked up now, ordered by how much each pick-up unblocks, with blocker chains shown inline
 - Dependency cycles reported in the Problems panel
 - "unblocks N" leverage and per-epic critical path

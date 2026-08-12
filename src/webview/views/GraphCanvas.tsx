@@ -65,6 +65,7 @@ import {
   GraphLens,
   LENS_LABELS,
   LensNode,
+  listEpics,
 } from "../../graph/lens";
 import {
   chainFilter,
@@ -178,12 +179,32 @@ export function GraphCanvas({
 
   const anchor = focusId ?? selectedBeadId ?? null;
 
+  const epics = useMemo(() => (graph ? listEpics(graph, beads) : []), [graph, beads]);
+  /** The epic the user picked from the toolbar, kept only while it exists. */
+  const [ownEpicId, setOwnEpicId] = useState<string | null>(null);
+  // The epic lens's anchor, derived rather than stored: the user's pick when
+  // it still exists, else the epic the selection sits inside, else the first
+  // epic. Deriving means a project switch or a deleted epic can never leave
+  // the lens pointing at nothing.
+  const epicId = useMemo(() => {
+    if (ownEpicId && epics.some((epic) => epic.id === ownEpicId)) return ownEpicId;
+    const offered = new Set(epics.map((epic) => epic.id));
+    const seen = new Set<string>();
+    let current: string | undefined = selectedBeadId ?? undefined;
+    while (current && !seen.has(current)) {
+      if (offered.has(current)) return current;
+      seen.add(current);
+      current = graph?.nodes[current]?.parent;
+    }
+    return epics[0]?.id ?? null;
+  }, [ownEpicId, epics, selectedBeadId, graph]);
+
   // The requested lens is evaluated first so the density decision has a real
   // node count to judge. Only the lens that survives that decision is laid out,
   // so a 500-node request never pays for a dagre pass nobody can read.
   const view = useMemo(() => {
     if (!graph) return null;
-    const requested = applyLens(graph, beads, { lens: requestedLens, focusId: anchor });
+    const requested = applyLens(graph, beads, { lens: requestedLens, focusId: anchor, epicId });
     const density = resolveDensity({
       requested: requestedLens,
       nodeCount: requested.nodes.length,
@@ -192,12 +213,14 @@ export function GraphCanvas({
     const result =
       density.lens === requestedLens
         ? requested
-        : applyLens(graph, beads, { lens: density.lens, focusId: anchor });
+        : applyLens(graph, beads, { lens: density.lens, focusId: anchor, epicId });
 
+    // The epic's card carries its rollup line, so it needs the taller body
+    // even though it is not a rolled node.
     const sized = result.nodes.map((node) => ({
       id: node.id,
       width: NODE_WIDTH,
-      height: node.rolled ? ROLLED_NODE_HEIGHT : NODE_HEIGHT,
+      height: node.rolled || node.progress ? ROLLED_NODE_HEIGHT : NODE_HEIGHT,
     }));
     const laidOut = layoutGraph(
       sized,
@@ -205,7 +228,7 @@ export function GraphCanvas({
       { direction: "LR" }
     );
     return { result, density, sized, laidOut };
-  }, [graph, beads, requestedLens, anchor, densityOverride]);
+  }, [graph, beads, requestedLens, anchor, epicId, densityOverride]);
 
   const nodes = view?.result.nodes ?? [];
   const edges = view?.result.edges ?? [];
@@ -562,6 +585,9 @@ export function GraphCanvas({
         lens={requestedLens}
         onLensChange={chooseLens}
         anchored={Boolean(anchor)}
+        epics={epics}
+        epicId={epicId}
+        onEpicChange={setOwnEpicId}
         query={query}
         onQueryChange={setQuery}
         onQueryKeyDown={onFindKeyDown}
@@ -655,21 +681,41 @@ export function GraphCanvas({
                 !contains && tangled.has(path.source) && tangled.has(path.target);
               const offChain = Boolean(onChain && edge && !contains && !onChain(edge));
               const offMatch = find.active && !(matched.has(path.source) && matched.has(path.target));
+              const dimmedEdge = offChain || offMatch;
+              // Named only on the epic lens, where the tethers are the point of
+              // the picture. On the full lens the same words repeated across
+              // every containment link would be wallpaper.
+              const midpoint =
+                contains && drawnLens === "epic"
+                  ? path.points[Math.floor(path.points.length / 2)]
+                  : null;
               return (
-                <path
-                  key={`${path.source}\t${path.target}`}
-                  className={`graph-canvas-edge${cycle ? " in-cycle" : ""}${
-                    contains ? " contains" : ""
-                  }${offChain || offMatch ? " dimmed" : ""}`}
-                  d={edgePath(path)}
-                  fill="none"
-                  stroke={cycle ? GRAPHIC_TOKENS.warning : GRAPHIC_TOKENS.neutral}
-                  strokeWidth={contains ? 1 : edge && edge.weight > 1 ? 2.5 : 1.25}
-                  strokeDasharray={cycle ? "5 4" : contains ? "1 4" : undefined}
-                  markerEnd={
-                    contains ? undefined : `url(#${markerId}-${cycle ? "arrow-cycle" : "arrow"})`
-                  }
-                />
+                <React.Fragment key={`${path.source}\t${path.target}`}>
+                  <path
+                    className={`graph-canvas-edge${cycle ? " in-cycle" : ""}${
+                      contains ? " contains" : ""
+                    }${dimmedEdge ? " dimmed" : ""}`}
+                    d={edgePath(path)}
+                    fill="none"
+                    stroke={cycle ? GRAPHIC_TOKENS.warning : GRAPHIC_TOKENS.neutral}
+                    strokeWidth={contains ? 1 : edge && edge.weight > 1 ? 2.5 : 1.25}
+                    strokeDasharray={cycle ? "5 4" : contains ? "1 4" : undefined}
+                    markerEnd={
+                      contains ? undefined : `url(#${markerId}-${cycle ? "arrow-cycle" : "arrow"})`
+                    }
+                  />
+                  {midpoint && (
+                    <text
+                      className={`graph-canvas-edge-label${dimmedEdge ? " dimmed" : ""}`}
+                      x={midpoint.x}
+                      y={midpoint.y - 4}
+                      textAnchor="middle"
+                      aria-hidden="true"
+                    >
+                      part of
+                    </text>
+                  )}
+                </React.Fragment>
               );
             })}
           </g>
@@ -941,6 +987,26 @@ function EmptyCanvas({
     return (
       <div className="graph-canvas-empty">
         <p>Select a bead to see what it blocks and what blocks it.</p>
+      </div>
+    );
+  }
+
+  if (lens === "epic") {
+    if (nodeCount === 0) {
+      return (
+        <div className="graph-canvas-empty">
+          <p>No epic to draw.</p>
+          <p className="graph-canvas-empty-hint">Pick one from the toolbar.</p>
+        </div>
+      );
+    }
+    // One node and no tethers: the chosen epic exists but holds nothing.
+    return (
+      <div className="graph-canvas-empty">
+        <p>Nothing inside this epic yet.</p>
+        <p className="graph-canvas-empty-hint">
+          Add work to it with <code>bd create --parent=&lt;epic-id&gt;</code>.
+        </p>
       </div>
     );
   }
