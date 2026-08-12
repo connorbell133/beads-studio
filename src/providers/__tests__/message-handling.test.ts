@@ -168,6 +168,17 @@ describe("webview message handling", () => {
     expect(posted).toContainEqual({ type: "setError", error: "boom" });
   });
 
+  it("opens the graph panel on the originating bead", async () => {
+    // Regression: this used to run `beadsGraph.focus` against a view that was
+    // never registered in package.json, so the button did nothing at all.
+    const { provider } = createProvider();
+
+    await provider.handle({ type: "viewInGraph", beadId: "bd-7" });
+
+    expect(executeCommand).toHaveBeenCalledWith("beads.openGraph", "bd-7");
+    expect(executeCommand).not.toHaveBeenCalledWith("beadsGraph.focus");
+  });
+
   it("ignores an unrecognized message rather than throwing", async () => {
     const { provider } = createProvider();
 

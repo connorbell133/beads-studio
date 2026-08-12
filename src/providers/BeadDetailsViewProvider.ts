@@ -227,9 +227,9 @@ export class BeadDetailsViewProvider extends BaseViewProvider {
         }
         break;
 
-      case "viewInGraph":
-        vscode.commands.executeCommand("beadsGraph.focus");
-        break;
+      // viewInGraph is handled by the shared host, which opens the graph panel
+      // focused on the bead. This override used to shadow it with a focus call
+      // against a `beadsGraph` view that was never registered.
     }
   }
 }

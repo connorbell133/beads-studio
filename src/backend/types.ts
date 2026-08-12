@@ -274,7 +274,7 @@ export function edgesFromIssues(
   const seen = new Map<string, BeadEdge>();
   for (const issue of issues) {
     for (const edge of edgesFromIssue(issue)) {
-      seen.set(`${edge.from} ${edge.to} ${edge.type}`, edge);
+      seen.set(`${edge.from}\u0000${edge.to}\u0000${edge.type}`, edge);
     }
   }
   return [...seen.values()];
@@ -464,62 +464,6 @@ export function normalizePriority(
     return 4;
   }
   return num as BeadPriority;
-}
-
-/**
- * Converts a raw bead object from CLI JSON to internal Bead type.
- * Returns null if status is invalid (bead will be skipped).
- */
-export function normalizeBead(raw: Record<string, unknown>): Bead | null {
-  const status = normalizeStatus(raw.status as string | undefined);
-  if (status === null) {
-    return null;
-  }
-  return {
-    id: String(raw.id || raw.ID || ""),
-    title: String(raw.title || raw.Title || raw.summary || "Untitled"),
-    description: raw.description
-      ? String(raw.description)
-      : raw.body
-        ? String(raw.body)
-        : undefined,
-    type: raw.type ? String(raw.type) : raw.category ? String(raw.category) : undefined,
-    priority: normalizePriority(raw.priority as number | string | undefined),
-    status,
-    assignee: raw.assignee
-      ? String(raw.assignee)
-      : raw.assigned_to
-        ? String(raw.assigned_to)
-        : undefined,
-    labels: Array.isArray(raw.labels)
-      ? raw.labels.map(String)
-      : raw.tags
-        ? (raw.tags as string[]).map(String)
-        : undefined,
-    createdAt: raw.created_at
-      ? String(raw.created_at)
-      : raw.createdAt
-        ? String(raw.createdAt)
-        : undefined,
-    updatedAt: raw.updated_at
-      ? String(raw.updated_at)
-      : raw.updatedAt
-        ? String(raw.updatedAt)
-        : undefined,
-    closedAt: raw.closed_at
-      ? String(raw.closed_at)
-      : raw.closedAt
-        ? String(raw.closedAt)
-        : undefined,
-    dependsOn: Array.isArray(raw.depends_on)
-      ? raw.depends_on.map((id) => ({ id: String(id) }))
-      : Array.isArray(raw.dependsOn)
-        ? raw.dependsOn.map((id) => ({ id: String(id) }))
-        : undefined,
-    blocks: Array.isArray(raw.blocks)
-      ? raw.blocks.map((id) => ({ id: String(id) }))
-      : undefined,
-  };
 }
 
 /**
