@@ -133,9 +133,12 @@ export function DashboardView({
               <div className="card-value">{summary.total || 0}</div>
               <div className="card-label">Total</div>
             </div>
-            <div className="summary-card ready">
+            <div
+              className="summary-card ready"
+              title="Open beads with no unresolved blocker - what you can pick up now"
+            >
               <div className="card-value">{summary.readyCount || 0}</div>
-              <div className="card-label">Open</div>
+              <div className="card-label">Ready</div>
             </div>
             <div className="summary-card in-progress">
               <div className="card-value">{summary.inProgressCount || 0}</div>
@@ -146,6 +149,15 @@ export function DashboardView({
               <div className="card-label">Blocked</div>
             </div>
           </div>
+
+          {summary.degraded && (
+            // Placed with the counts it qualifies, not at the top of the view:
+            // the imprecision lives in "Blocked", so the caveat belongs there.
+            <p className="summary-degraded" role="status">
+              Blocked may over-report: this bd build cannot list gate and agent
+              beads, so some blockers cannot be checked. Upgrade bd for exact counts.
+            </p>
+          )}
 
           <div className="breakdown-section compact">
             <h3>By Status</h3>

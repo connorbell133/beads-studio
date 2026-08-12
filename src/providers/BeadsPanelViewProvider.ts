@@ -12,7 +12,7 @@
 import * as vscode from "vscode";
 import { BaseViewProvider } from "./BaseViewProvider";
 import { BeadsProjectManager } from "../backend/BeadsProjectManager";
-import { WebviewToExtensionMessage, Bead, issueToWebviewBead } from "../backend/types";
+import { WebviewToExtensionMessage } from "../backend/types";
 import { Logger } from "../utils/logger";
 
 export class BeadsPanelViewProvider extends BaseViewProvider {
@@ -57,15 +57,17 @@ export class BeadsPanelViewProvider extends BaseViewProvider {
     this.setError(null);
 
     try {
-      const issues = await client.list();
+      const loaded = await this.loadGraph();
       if (showLoading) {
         await this.waitForMinimumLoading(loadingStartedAt);
       }
-      if (thisRequest !== this.loadSequence) {
+      if (thisRequest !== this.loadSequence || !loaded) {
         return;
       }
-      const beads = issues.map(issueToWebviewBead).filter((b): b is Bead => b !== null);
-      this.postMessage({ type: "setBeads", beads });
+      // Every bead goes over the wire, coordination types included; the webview
+      // decides what to show. Filtering here is what left the graph blind.
+      this.postMessage({ type: "setBeads", beads: loaded.beads });
+      this.postMessage({ type: "setGraph", graph: loaded.model });
       this.setLoading(false);
     } catch (err) {
       if (showLoading) {

@@ -5,11 +5,13 @@
  * Manages global state and message passing with the extension.
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Bead,
+  BeadsGraphModel,
   BeadsProject,
   BeadsSummary,
+  COORDINATION_TYPES,
   ExtensionMessage,
   WebviewSettings,
   vscode,
@@ -29,6 +31,7 @@ interface AppState {
   selectedBead: Bead | null;
   selectedBeadId: string | null;
   summary: BeadsSummary | null;
+  graph: BeadsGraphModel | null;
   loading: boolean;
   error: string | null;
   settings: WebviewSettings;
@@ -42,6 +45,7 @@ const initialState: AppState = {
   selectedBead: null,
   selectedBeadId: null,
   summary: null,
+  graph: null,
   loading: true,
   error: null,
   settings: { renderMarkdown: true, userId: "", tooltipHoverDelay: 1000 },
@@ -76,6 +80,9 @@ export function App(): React.ReactElement {
       case "setSummary":
         setState((prev) => ({ ...prev, summary: message.summary }));
         break;
+      case "setGraph":
+        setState((prev) => ({ ...prev, graph: message.graph }));
+        break;
       case "setLoading":
         setState((prev) => ({ ...prev, loading: message.loading }));
         break;
@@ -106,6 +113,15 @@ export function App(): React.ReactElement {
     };
   }, [handleMessage]);
 
+  // Coordination beads reach the webview so the graph is complete and future
+  // surfaces (a gate lane, a human inbox) can render them. They are filtered
+  // once here rather than per view, so adding a view cannot leak them by
+  // omission - and so this is the only line to change when a surface wants them.
+  const visibleBeads = useMemo(
+    () => state.beads.filter((bead) => !COORDINATION_TYPES.includes(bead.type as never)),
+    [state.beads]
+  );
+
   // Render the appropriate view
   const renderView = () => {
       // Discovery finished without a project: show how to fix it, not a spinner (#76)
@@ -117,7 +133,7 @@ export function App(): React.ReactElement {
         return <NoProject />;
       }
 
-      if (state.viewType === "beadsPanel" && state.loading && state.beads.length === 0) {
+      if (state.viewType === "beadsPanel" && state.loading && visibleBeads.length === 0) {
         return <Loading />;
       }
 
@@ -126,7 +142,7 @@ export function App(): React.ReactElement {
         return (
           <DashboardView
             summary={state.summary}
-            beads={state.beads}
+            beads={visibleBeads}
             loading={state.loading}
             error={state.error}
             projects={state.projects}
@@ -155,7 +171,7 @@ export function App(): React.ReactElement {
       case "beadsPanel":
         return (
           <IssuesView
-            beads={state.beads}
+            beads={visibleBeads}
             loading={state.loading}
             error={state.error}
             selectedBeadId={state.selectedBeadId}
@@ -185,7 +201,7 @@ export function App(): React.ReactElement {
         }
         // Extract unique assignees from beads list
         const knownAssignees = Array.from(
-          new Set(state.beads.map((b) => b.assignee).filter((a): a is string => !!a))
+          new Set(visibleBeads.map((b) => b.assignee).filter((a): a is string => !!a))
         ).sort();
         return (
           <DetailsView

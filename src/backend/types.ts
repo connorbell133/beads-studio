@@ -1,3 +1,5 @@
+import type { BeadsGraphModel } from "../graph/types";
+
 /**
  * Beads - TypeScript Data Models
  *
@@ -308,7 +310,11 @@ export interface BackendProcessInfo {
   [key: string]: unknown;
 }
 
-// Summary statistics for dashboard
+// Summary statistics for dashboard.
+//
+// readyCount and blockedCount are graph-derived (see src/graph/summary.ts), not
+// tallies of the `open` and `blocked` status labels. In beads, ready means open
+// AND free of open blockers - that is the entire purpose of the blocks edge.
 export interface BeadsSummary {
   total: number;
   // Keyed by string: custom statuses are unbounded, so this is not a total map
@@ -318,6 +324,8 @@ export interface BeadsSummary {
   readyCount: number;
   blockedCount: number;
   inProgressCount: number;
+  /** The node set was partial, so blockedCount may over-report. */
+  degraded: boolean;
 }
 
 // Settings that can be passed to webview
@@ -327,11 +335,6 @@ export interface WebviewSettings {
   tooltipHoverDelay: number; // 0 = disabled
 }
 
-// Placeholder for graph view (not yet implemented)
-export interface DependencyGraph {
-  nodes: Bead[];
-  edges: { from: string; to: string; type: DependencyType }[];
-}
 
 // Messages sent from extension to webview
 export type ExtensionToWebviewMessage =
@@ -341,7 +344,7 @@ export type ExtensionToWebviewMessage =
   | { type: "setBead"; bead: Bead | null }
   | { type: "setSelectedBeadId"; beadId: string | null }
   | { type: "setSummary"; summary: BeadsSummary | null }
-  | { type: "setGraph"; graph: DependencyGraph }
+  | { type: "setGraph"; graph: BeadsGraphModel }
   | { type: "setProjects"; projects: BeadsProject[] }
   | { type: "setLoading"; loading: boolean }
   | { type: "setError"; error: string | null }

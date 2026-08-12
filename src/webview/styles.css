@@ -2831,3 +2831,15 @@ textarea {
 .view-toggle button:hover:not(.active) {
   background: var(--vscode-list-hoverBackground);
 }
+
+/* Degraded-mode caveat on the dashboard counts. Sits with the numbers it
+   qualifies rather than shouting from the top of the view. */
+.summary-degraded {
+  margin: var(--spacing-sm) 0 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-left: 2px solid var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground));
+  background: var(--vscode-textCodeBlock-background);
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  line-height: 1.5;
+}

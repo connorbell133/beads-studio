@@ -11,7 +11,8 @@
 import * as vscode from "vscode";
 import { BaseViewProvider } from "./BaseViewProvider";
 import { BeadsProjectManager } from "../backend/BeadsProjectManager";
-import { Bead, BeadsSummary, issueToWebviewBead, BeadPriority, BUILT_IN_STATUSES } from "../backend/types";
+import { BeadsSummary, BUILT_IN_STATUSES } from "../backend/types";
+import { deriveSummary } from "../graph/summary";
 import { Logger } from "../utils/logger";
 
 export class DashboardViewProvider extends BaseViewProvider {
@@ -40,6 +41,7 @@ export class DashboardViewProvider extends BaseViewProvider {
           readyCount: 0,
           blockedCount: 0,
           inProgressCount: 0,
+          degraded: false,
         },
       });
       // No project/backend: clear loading so the webview shows the empty state
@@ -59,42 +61,36 @@ export class DashboardViewProvider extends BaseViewProvider {
     this.setError(null);
 
     try {
-      const issues = await client.list();
+      const loaded = await this.loadGraph();
       if (showLoading) {
         await this.waitForMinimumLoading(loadingStartedAt);
       }
-      if (thisRequest !== this.loadSequence) {
+      if (thisRequest !== this.loadSequence || !loaded) {
         return;
       }
 
-      const beads = issues.map(issueToWebviewBead).filter((b): b is Bead => b !== null);
-      // Seed the built-in statuses so they report 0 rather than undefined;
-      // custom statuses are added on demand as they are encountered.
-      const byStatus: Record<string, number> = Object.fromEntries(
-        BUILT_IN_STATUSES.map((s) => [s, 0])
-      );
-      const byPriority: Record<BeadPriority, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
-
-      for (const bead of beads) {
-        byStatus[bead.status] = (byStatus[bead.status] ?? 0) + 1;
-        if (bead.priority !== undefined) byPriority[bead.priority]++;
-      }
-
-      const summary: BeadsSummary = {
-        total: beads.length,
-        byStatus,
-        byPriority,
-        readyCount: byStatus.open,
-        blockedCount: byStatus.blocked,
-        inProgressCount: byStatus.in_progress,
-      };
+      const { beads, model } = loaded;
+      const summary = deriveSummary(beads, model, BUILT_IN_STATUSES) as BeadsSummary;
 
       this.postMessage({ type: "setSummary", summary });
+      this.postMessage({ type: "setGraph", graph: model });
 
-      const openBeads = beads.filter((b) => b.status === "open").slice(0, 5);
-      const blockedBeads = beads.filter((b) => b.status === "blocked").slice(0, 5);
+      // The highlight lists now follow the graph too: "ready" is what a person
+      // can actually pick up, not everything wearing the `open` label, and
+      // "blocked" is derived from open blockers rather than a status someone
+      // remembered to set.
+      const byId = new Map(beads.map((bead) => [bead.id, bead]));
+      const pick = (ids: string[]) =>
+        ids
+          .map((id) => byId.get(id))
+          .filter((bead): bead is (typeof beads)[number] => Boolean(bead))
+          .slice(0, 5);
       const inProgressBeads = beads.filter((b) => b.status === "in_progress").slice(0, 5);
-      this.postMessage({ type: "setBeads", beads: [...openBeads, ...blockedBeads, ...inProgressBeads] });
+
+      this.postMessage({
+        type: "setBeads",
+        beads: [...pick(model.ready), ...pick(model.blocked), ...inProgressBeads],
+      });
       this.setLoading(false);
     } catch (err) {
       if (showLoading) {

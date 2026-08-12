@@ -4,6 +4,14 @@
  * These mirror the backend types but are used in the React webview.
  */
 
+// The graph model is imported rather than mirrored. src/graph has no vscode
+// dependency, so both sides can share one definition - and a mirrored copy is
+// exactly how the dependency shape drifted out of sync in the first place.
+import type { BeadsGraphModel } from "../graph/types";
+
+export type { BeadsGraphModel, BeadGraphNode } from "../graph/types";
+export { COORDINATION_TYPES } from "../graph/types";
+
 // Re-export types that are shared between extension and webview.
 //
 // These are bd's seven built-in statuses. bd also allows arbitrary user-defined
@@ -85,6 +93,8 @@ export interface BeadsProject {
   backendPid?: number;
 }
 
+// readyCount and blockedCount are graph-derived, not tallies of the `open` and
+// `blocked` status labels.
 export interface BeadsSummary {
   total: number;
   // Keyed by string: custom statuses are unbounded. Read with `byStatus[s] ?? 0`.
@@ -93,6 +103,8 @@ export interface BeadsSummary {
   readyCount: number;
   blockedCount: number;
   inProgressCount: number;
+  /** The node set was partial, so blockedCount may over-report. */
+  degraded: boolean;
 }
 
 export interface WebviewSettings {
@@ -109,6 +121,7 @@ export type ExtensionMessage =
   | { type: "setBead"; bead: Bead | null }
   | { type: "setSelectedBeadId"; beadId: string | null }
   | { type: "setSummary"; summary: BeadsSummary }
+  | { type: "setGraph"; graph: BeadsGraphModel }
   | { type: "setProjects"; projects: BeadsProject[] }
   | { type: "setLoading"; loading: boolean }
   | { type: "setError"; error: string | null }

@@ -12,9 +12,13 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { BeadsProjectManager } from "../backend/BeadsProjectManager";
 import {
+  Bead,
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
+  issueToWebviewBead,
 } from "../backend/types";
+import { deriveGraph } from "../graph/BeadsGraph";
+import { BeadsGraphModel } from "../graph/types";
 import { Logger } from "../utils/logger";
 import { resolveEnvVariables } from "../utils/resolve-env-variables";
 
@@ -112,6 +116,26 @@ export abstract class BaseViewProvider implements vscode.WebviewViewProvider {
    * Loads view-specific data. Override in subclasses.
    */
   protected abstract loadData(reason?: "initial" | "projectChange" | "manualRefresh" | "background"): Promise<void>;
+
+  /**
+   * One complete read plus one derivation, shared by every view.
+   *
+   * Both providers go through here so the CLI and Dolt paths cannot drift and
+   * so no view recomputes readiness its own way. Returns null when there is no
+   * backend client - the caller decides what empty state to show.
+   */
+  protected async loadGraph(): Promise<{ beads: Bead[]; model: BeadsGraphModel } | null> {
+    const client = this.projectManager.getClient();
+    if (!client) return null;
+
+    const payload = await client.listGraph();
+    const beads = payload.nodes
+      .map(issueToWebviewBead)
+      .filter((bead): bead is Bead => bead !== null);
+    const model = deriveGraph(payload.nodes, payload.edges, { complete: payload.complete });
+
+    return { beads, model };
+  }
 
   /**
    * Handles messages from the webview. Override in subclasses for custom handling.
