@@ -976,6 +976,17 @@ textarea {
   line-height: 1;
 }
 
+/* In the toolbar the preset sits beside the search box; match its height and
+   keep the label from wrapping as the panel narrows. */
+.panel-toolbar-compact .preset-dropdown {
+  flex-shrink: 0;
+}
+
+.panel-toolbar-compact .preset-dropdown-btn {
+  height: 22px;
+  white-space: nowrap;
+}
+
 .preset-dropdown-menu {
   min-width: 100px;
 }
@@ -1339,6 +1350,7 @@ textarea {
   background: var(--vscode-list-hoverBackground);
 }
 
+
 .col-menu-divider {
   margin: 4px 0;
   border: none;
@@ -1523,226 +1535,181 @@ textarea {
   opacity: 0.8;
 }
 
-.summary-section.compact {
+/* ---- Dashboard stat strip -------------------------------------------------
+   Flat and borderless, ordered by the glance: Ready is the one accented
+   number, so it is the first thing a five-second visit resolves. The stats
+   that have a list answering them are real buttons that jump to it. */
+
+.dash-stats {
+  display: grid;
   grid-template-columns: repeat(4, minmax(56px, 1fr));
-  gap: 6px;
+  gap: 2px;
 }
 
-.dashboard-project-dir {
-  min-height: 28px;
+.dash-stat {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 0;
-  background: transparent;
+  gap: 2px;
+  padding: var(--spacing-sm) var(--spacing-xs);
   border: none;
-  overflow: hidden;
-  text-align: left;
-}
-
-.dashboard-project-dir-link {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-  padding: 0;
-  border: none;
+  border-radius: var(--border-radius-md);
   background: transparent;
   color: inherit;
-}
-
-.dashboard-project-dir-label {
-  flex-shrink: 0;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--vscode-descriptionForeground);
-}
-
-.dashboard-project-dir-value {
-  font-family: inherit;
-  display: inline-block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--vscode-foreground);
-  background: transparent;
-}
-
-.dashboard-project-dir-link:hover .dashboard-project-dir-value {
-  text-decoration: underline;
-}
-
-.summary-section {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
-  gap: var(--spacing-sm);
-}
-
-.summary-card {
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-radius: var(--border-radius-md);
-  background-color: var(--vscode-sideBar-background);
-  border: 1px solid var(--vscode-panel-border);
+  font: inherit;
   text-align: center;
 }
 
-.summary-card .card-value {
+.dash-stat-btn {
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.dash-stat-btn:hover:not(:disabled) {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.dash-stat-btn:disabled {
+  cursor: default;
+}
+
+.dash-stat-value {
   font-size: 18px;
   font-weight: 700;
   line-height: 1.1;
-}
-
-.summary-card .card-label {
-  font-size: 9px;
-  color: var(--vscode-descriptionForeground);
-  text-transform: uppercase;
-  margin-top: 2px;
-}
-
-.summary-card.total .card-value {
   color: var(--vscode-foreground);
 }
 
-.summary-card.ready .card-value {
-  color: var(--vscode-foreground);
-}
-
-.summary-card.in-progress .card-value {
-  color: var(--vscode-charts-blue);
-}
-
-.summary-card.blocked .card-value {
-  color: var(--vscode-charts-red);
-}
-
-.breakdown-section {
-  padding: var(--spacing-md);
-  background-color: var(--vscode-sideBar-background);
-  border-radius: var(--border-radius-lg);
-  border: 1px solid var(--vscode-panel-border);
-}
-
-.breakdown-section h3 {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--vscode-descriptionForeground);
+.dash-stat-label {
+  font-size: 10px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  margin-bottom: var(--spacing-md);
+  color: var(--vscode-descriptionForeground);
 }
 
-.breakdown-bars {
+/* ---- Dashboard sections ---------------------------------------------------
+   Grouping is a header plus spacing, matching the lane below. The card
+   borders this replaces disagreed with the rest of the surface. */
+
+.dash-section {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
 }
 
-.breakdown-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-}
-
-.bar-label {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  min-width: 100px;
-}
-
-.bar-label.compact {
-  min-width: 84px;
-  gap: 6px;
-}
-
-.bar-label.compact.label {
-  min-width: 120px;
-}
-
-.bar-count {
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.bar-track {
-  flex: 1;
-  height: 8px;
-  background-color: var(--vscode-progressBar-background);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.bar-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width var(--transition-normal);
-}
-
-.bar-fill.label {
-  opacity: 0.95;
-}
-
-.work-sections {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--spacing-md);
-}
-
-.work-section {
-  padding: var(--spacing-md);
-  background-color: var(--vscode-sideBar-background);
-  border-radius: var(--border-radius-lg);
-  border: 1px solid var(--vscode-panel-border);
-}
-
-.work-section h3 {
-  font-size: 12px;
+.dash-section-title {
+  margin: 0;
+  font-size: 0.9em;
   font-weight: 600;
   text-transform: uppercase;
-  margin-bottom: var(--spacing-md);
-  padding-bottom: var(--spacing-sm);
-  border-bottom: 1px solid var(--vscode-panel-border);
-}
-
-.work-section.ready h3 { color: var(--vscode-foreground); }
-.work-section.in-progress h3 { color: var(--vscode-charts-blue); }
-.work-section.blocked h3 { color: var(--vscode-charts-red); }
-
-.bead-list {
-  list-style: none;
-}
-
-.bead-list-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-sm);
-  margin-bottom: var(--spacing-xs);
-  border-radius: var(--border-radius);
-  cursor: pointer;
-  transition: background-color var(--transition-fast);
-}
-
-.bead-list-item:hover {
-  background-color: var(--vscode-list-hoverBackground);
-}
-
-.bead-list-item .bead-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.bead-list-item .bead-id {
-  font-size: 10px;
+  letter-spacing: 0.06em;
   color: var(--vscode-descriptionForeground);
 }
 
-.bead-list-item .bead-title {
-  font-size: 12px;
-  white-space: nowrap;
+/* One stacked bar carries the whole distribution; the legend under it names
+   each segment with the same glyph the issues list uses for that status. */
+
+.dash-distribution {
+  display: flex;
+  height: 6px;
+  gap: 2px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.dash-distribution-segment {
+  flex-basis: 3px;
+  min-width: 3px;
+  border-radius: 3px;
+}
+
+/* The bar is the stat strip's denominator, not a second summary: it sits
+   directly under the numbers, and its caption names only the statuses the
+   strip does not carry. */
+.dash-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.dash-progress-caption {
+  margin: 0;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+
+.dash-upnext-hint {
+  margin: 0;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ---- Pulse ----------------------------------------------------------------
+   What happened while the operator wasn't looking: one line of deltas, plus a
+   row per claim that has stopped moving. */
+
+.dash-section-sub {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.8;
+}
+
+.dash-pulse-quiet {
+  margin: 0;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.dash-pulse-line {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--spacing-md);
+  row-gap: var(--spacing-xs);
+}
+
+.dash-pulse-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.dash-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.dash-pulse-count {
+  font-weight: 700;
+  color: var(--vscode-foreground);
+}
+
+.dash-stale-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.dash-stale-held {
+  flex: 0 0 auto;
+  max-width: 16ch;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.dash-activity-time {
+  flex: 0 0 auto;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
 }
 
 /* ==================== Bead Details ==================== */
@@ -2649,11 +2616,23 @@ textarea {
 }
 
 .kanban-column.collapsed .kanban-column-header {
+  /* Fill the strip so the header's divider never cuts across mid-column */
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   writing-mode: vertical-rl;
   text-orientation: mixed;
-  padding: var(--spacing-md) var(--spacing-xs);
+  padding: var(--spacing-sm) 0;
   justify-content: flex-start;
+  align-items: center;
   gap: var(--spacing-sm);
+  border-bottom: none;
+}
+
+.kanban-column.collapsed .kanban-column-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kanban-column-count {
@@ -2667,6 +2646,9 @@ textarea {
 .kanban-column.collapsed .kanban-column-count {
   writing-mode: horizontal-tb;
   text-orientation: mixed;
+  /* Badge leads the strip so counts align across collapsed columns */
+  order: -1;
+  flex-shrink: 0;
 }
 
 .kanban-column-body {
@@ -2847,6 +2829,13 @@ textarea {
   font-size: 1.3em;
   font-weight: 600;
   color: var(--vscode-foreground);
+}
+
+.graph-subtitle {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  max-width: 60ch;
 }
 
 .graph-summary {

@@ -12,7 +12,8 @@
 
 import React, { useMemo } from "react";
 import { Bead, BeadsGraphModel } from "../types";
-import { StatusBadge } from "../common/StatusBadge";
+import { PriorityIcon } from "../common/PriorityIcon";
+import { StatusRing } from "../common/StatusRing";
 import { TypeIcon } from "../common/TypeIcon";
 import { Loading } from "../common/Loading";
 import { ErrorMessage } from "../common/ErrorMessage";
@@ -95,6 +96,10 @@ export function GraphView({
     <div className="graph-view">
       <header className="graph-header">
         <h1 className="graph-title">Dependency graph</h1>
+        <p className="graph-subtitle">
+          Which work is waiting on which: an arrow points from a bead that blocks to the bead it
+          holds up. Beads with no open blockers are marked ready.
+        </p>
         <p className="graph-summary">
           {ordered.length} beads, {edgeCount} blocking {edgeCount === 1 ? "link" : "links"}
           {graph.hasCycle && (
@@ -124,9 +129,9 @@ export function GraphView({
 
       <details className="graph-adjacency-disclosure" open={ordered.length <= 25}>
         <summary>
-          Blockers as a list
+          The same graph as text
           <span className="graph-adjacency-hint">
-            keyboard navigable, and what a screen reader reads
+            every bead and what blocks it &mdash; works with arrow keys and screen readers
           </span>
         </summary>
 
@@ -153,6 +158,9 @@ export function GraphView({
                 node.inCycle ? " in-cycle" : ""
               }`}
             >
+              {/* The Linear row anatomy, same order as the Issues list. The
+                  glyphs are display-only — this row is one button, and its
+                  text is the accessible reading of the graph. */}
               <button
                 type="button"
                 className="graph-row-main"
@@ -161,10 +169,11 @@ export function GraphView({
                 onClick={() => onSelectBead(node.id)}
                 aria-current={isSelected ? "true" : undefined}
               >
-                <TypeIcon type={bead.type ?? ""} />
+                <PriorityIcon priority={bead.priority} />
                 <span className="graph-row-id">{node.id}</span>
+                <StatusRing status={bead.status} />
+                <TypeIcon type={bead.type ?? ""} size={14} />
                 <span className="graph-row-title">{bead.title}</span>
-                <StatusBadge status={bead.status} />
                 {node.ready && <span className="graph-chip ready">ready</span>}
                 <LeverageBadge leverage={node.leverage} />
               </button>

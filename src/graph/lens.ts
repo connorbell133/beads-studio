@@ -5,16 +5,15 @@
  * before layout. All three share one render path, so the canvas has no idea
  * which lens it is drawing - it just gets fewer or more nodes.
  *
- *   epic-rollup   Nodes are top-level beads: an epic stands for its whole
- *                 subtree, and ticket-level edges roll up onto it. Edges that
- *                 stay inside one epic are dropped, because "this epic blocks
- *                 itself" is noise. This is the default lens - a 500-node
- *                 hairball on open is a decision-paralysis surface.
  *   epic          One epic, opened up: the epic and every descendant, with each
  *                 member tethered to its container so the picture converges on
  *                 the epic, plus the blocking edges among members. Answers
  *                 "what is inside this epic and in what order". Anchored by an
- *                 epic id chosen in the toolbar, not by the selection.
+ *                 epic id chosen in the toolbar, not by the selection. The
+ *                 default lens: it is the one that is smaller by construction,
+ *                 and a 500-node hairball on open is a decision-paralysis
+ *                 surface. Orphan top-level beads belong to the full lens, not
+ *                 here.
  *   full          Every visible bead, every blocking edge between two of them.
  *   blast-radius  The transitive closure of blockage around one bead, upstream
  *                 and downstream. Answers "what does this touch".
@@ -23,7 +22,7 @@
  *
  *   Only blocking edges are drawn. parent-child is structure, not sequencing,
  *   and drawing containment alongside blockage is what makes a dependency graph
- *   unreadable. Hierarchy is how the rollup groups, never a line on the canvas.
+ *   unreadable. Hierarchy is the epic lens's membership, never an arrow.
  *
  *   Edges come from `blockedBy`, which the derivation already narrowed to open
  *   blockers. A closed blocker is not in the way, so it is not a line.
@@ -44,18 +43,29 @@ import { BeadsGraphModel, COORDINATION_TYPES } from "./types";
 /** Edge keys join two ids; no bd id contains a tab. */
 const EDGE_KEY_SEP = "\t";
 
-export const GRAPH_LENSES = ["epic-rollup", "epic", "full", "blast-radius"] as const;
+export const GRAPH_LENSES = ["epic", "full", "blast-radius"] as const;
 
 export type GraphLens = (typeof GRAPH_LENSES)[number];
 
 /** The lens the DAG opens on. Never the full graph. */
-export const DEFAULT_LENS: GraphLens = "epic-rollup";
+export const DEFAULT_LENS: GraphLens = "epic";
 
 export const LENS_LABELS: Record<GraphLens, string> = {
-  "epic-rollup": "Epics",
-  epic: "One epic",
+  epic: "Epics",
   full: "All beads",
   "blast-radius": "Blast radius",
+};
+
+/**
+ * One plain sentence per lens: what its picture shows. Toolbar tooltips and
+ * empty states both read from here, so a lens is described in the same words
+ * wherever the user meets it.
+ */
+export const LENS_DESCRIPTIONS: Record<GraphLens, string> = {
+  epic: "One epic at a time: everything inside it, and the blocking order among those beads. Pick which epic from the dropdown.",
+  full: "Every bead, every blocking link.",
+  "blast-radius":
+    "The chain through one bead: everything it blocks and everything blocking it, however many links away.",
 };
 
 /** The subset of a bead a lens reads. Satisfied by `Bead`. */
@@ -78,10 +88,6 @@ export interface LensNode {
   inCycle: boolean;
   leverage: number;
   rank: number;
-  /** Beads this node stands for, itself first. One entry unless rolled up. */
-  members: string[];
-  /** True when the node stands for more than itself. */
-  rolled: boolean;
   /**
    * A coordination bead - a gate, agent, role or message - drawn only because
    * it blocks visible work. These are not work, so they read muted, but
@@ -89,7 +95,7 @@ export interface LensNode {
    * a blocker, and the two surfaces disagreed about why something was stuck.
    */
   coordination: boolean;
-  /** Closed-of-total across `members`, on rolled nodes only. */
+  /** Closed-of-total across the epic's members, on the epic lens's epic card only. */
   progress?: { closed: number; total: number };
   /**
    * Hops from the focus bead, on the blast-radius lens only. Negative upstream
@@ -102,10 +108,6 @@ export interface LensNode {
 export interface LensEdge {
   blocker: string;
   blocked: string;
-  /** How many underlying bead-level edges this line stands for. */
-  weight: number;
-  /** True when `weight > 1` or either end is a rolled node. */
-  rolled: boolean;
   /**
    * What the line means.
    *
@@ -134,23 +136,13 @@ export interface LensResult {
 /**
  * The lens to open on for a given project.
  *
- * The rollup is the right default - a readable dozen nodes beats a hairball -
- * but it drops edges that live inside one epic, and a project that is one epic
- * with internal sequencing has *every* edge dropped. Opening on a view that
- * draws four disconnected dots, on a project with real dependencies, teaches
- * the user the graph is broken.
- *
- * So: prefer the rollup, but fall through to the full graph when the rollup has
- * nothing to draw and the full graph does. Density still governs from there -
- * this picks the most informative lens, not an unreadable one.
+ * The epic lens when there is any epic to open up - a readable subtree beats a
+ * hairball, and it is the view that answers "what order does this work go in".
+ * A project with no epics has nothing for that lens to draw, so it falls
+ * through to the full graph. Density still governs from there.
  */
 export function chooseInitialLens(model: BeadsGraphModel, beads: LensBead[]): GraphLens {
-  const rollup = applyLens(model, beads, { lens: DEFAULT_LENS });
-  if (rollup.edges.some((edge) => edge.kind === "blocks")) {
-    return DEFAULT_LENS;
-  }
-  const full = applyLens(model, beads, { lens: "full" });
-  return full.edges.some((edge) => edge.kind === "blocks") ? "full" : DEFAULT_LENS;
+  return listEpics(model, beads).length > 0 ? DEFAULT_LENS : "full";
 }
 
 export interface LensOptions {
@@ -247,15 +239,13 @@ export function applyLens(
   const total = Object.keys(model.nodes).length;
 
   switch (options.lens) {
-    case "full":
-      return finish(model, context, "full", context.ids, undefined, total);
     case "epic":
       return epicDetail(model, context, options, total);
     case "blast-radius":
       return blastRadius(model, context, options, total);
-    case "epic-rollup":
+    case "full":
     default:
-      return epicRollup(model, context, total);
+      return finish(model, context, "full", context.ids, undefined, total);
   }
 }
 
@@ -312,53 +302,6 @@ function buildContext(
 }
 
 /**
- * Each visible bead rolls up to the top of its parent chain, so an epic stands
- * for its members and a parentless bead stands for itself.
- *
- * Rolling to the root rather than to the nearest epic is what keeps the lens a
- * readable dozen nodes when epics nest inside milestones.
- *
- * A parent cycle has no root to reach, so the whole ring elects its lowest id
- * as the container. That is malformed data the view still has to draw, and
- * dropping every bead in the ring would hide the beads that reveal the problem.
- */
-function epicRollup(model: BeadsGraphModel, context: Context, total: number): LensResult {
-  const containerOf = new Map<string, string>();
-  for (const id of context.ids) {
-    const chain = [id];
-    const seen = new Set<string>([id]);
-    let current = id;
-    for (;;) {
-      const parent = model.nodes[current]?.parent;
-      if (!parent || !context.beads.has(parent)) break;
-      if (seen.has(parent)) {
-        current = chain.reduce((lowest, next) => (byId(next, lowest) < 0 ? next : lowest));
-        break;
-      }
-      seen.add(parent);
-      chain.push(parent);
-      current = parent;
-    }
-    containerOf.set(id, current);
-  }
-
-  const containers = context.ids.filter((id) => containerOf.get(id) === id);
-  const members = new Map<string, string[]>(containers.map((id) => [id, []]));
-  for (const id of context.ids) {
-    members.get(containerOf.get(id) as string)?.push(id);
-  }
-
-  return finish(
-    model,
-    context,
-    "epic-rollup",
-    containers,
-    { containerOf, members },
-    total
-  );
-}
-
-/**
  * One epic opened up: the epic itself plus every visible descendant, each
  * member drawn as its own node.
  *
@@ -383,7 +326,7 @@ function epicDetail(
   const members = descendantsOf(model, context, epicId);
   const result = finish(model, context, "epic", [epicId, ...members], undefined, total);
 
-  // The epic's own card carries the rollup, so the lens answers "how far
+  // The epic's own card carries the progress line, so the lens answers "how far
   // along" without a separate header.
   const epic = result.nodes.find((node) => node.id === epicId);
   if (epic && members.length > 0) {
@@ -441,11 +384,6 @@ function blastRadius(
   return finish(model, context, "blast-radius", ids, { distance, focusId }, total);
 }
 
-interface Rollup {
-  containerOf: Map<string, string>;
-  members: Map<string, string[]>;
-}
-
 interface Radius {
   distance: Map<string, number>;
   focusId: string;
@@ -464,18 +402,14 @@ function finish(
   context: Context,
   lens: GraphLens,
   ids: string[],
-  extra: Rollup | Radius | undefined,
+  radius: Radius | undefined,
   total: number
 ): LensResult {
-  const rollup = extra && "members" in extra ? extra : undefined;
-  const radius = extra && "distance" in extra ? extra : undefined;
   const shown = new Set(ids);
 
   const nodes: LensNode[] = ids.map((id) => {
     const bead = context.beads.get(id) as LensBead;
     const derived = model.nodes[id];
-    const members = rollup ? (rollup.members.get(id) ?? [id]) : [id];
-    const ordered = [id, ...members.filter((member) => member !== id).sort(byId)];
 
     const node: LensNode = {
       id,
@@ -488,64 +422,40 @@ function finish(
       leverage: derived.leverage,
       coordination: context.coordination.has(id),
       rank: derived.rank,
-      members: ordered,
-      rolled: ordered.length > 1,
     };
 
-    if (node.rolled) {
-      node.progress = {
-        closed: ordered.filter((member) => context.beads.get(member)?.status === "closed").length,
-        total: ordered.length,
-      };
-    }
     if (radius) node.distance = radius.distance.get(id);
 
     return node;
   });
 
-  // Roll each bead-level edge onto the nodes actually drawn, then collapse the
-  // duplicates that produces. An edge inside one rolled node is dropped: a
-  // self-loop on an epic says nothing about what to work on next.
-  const weights = new Map<string, number>();
+  // Bead-level edges between two drawn nodes, deduplicated in case the model
+  // carries the same blocker twice.
+  const seen = new Set<string>();
+  const edges: LensEdge[] = [];
   for (const blocked of context.ids) {
     for (const blocker of context.blockedBy.get(blocked) ?? []) {
-      const from = rollup ? (rollup.containerOf.get(blocker) ?? blocker) : blocker;
-      const to = rollup ? (rollup.containerOf.get(blocked) ?? blocked) : blocked;
-      if (from === to) continue;
-      if (!shown.has(from) || !shown.has(to)) continue;
-      const key = `${from}${EDGE_KEY_SEP}${to}`;
-      weights.set(key, (weights.get(key) ?? 0) + 1);
+      if (!shown.has(blocker) || !shown.has(blocked)) continue;
+      const key = `${blocker}${EDGE_KEY_SEP}${blocked}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ blocker, blocked, kind: "blocks" });
     }
   }
+  edges.sort((a, b) => byId(a.blocker, b.blocker) || byId(a.blocked, b.blocked));
 
-  const rolledIds = new Set(nodes.filter((node) => node.rolled).map((node) => node.id));
-  const edges: LensEdge[] = [...weights.entries()]
-    .map(([key, weight]) => {
-      const [blocker, blocked] = key.split(EDGE_KEY_SEP);
-      return {
-        blocker,
-        blocked,
-        weight,
-        rolled: weight > 1 || rolledIds.has(blocker) || rolledIds.has(blocked),
-        kind: "blocks" as const,
-      };
-    })
-    .sort((a, b) => byId(a.blocker, b.blocker) || byId(a.blocked, b.blocked));
-
-  // Containment, but only where the members are drawn as themselves. A rolled
-  // epic has already absorbed its members, so a tether there would be a
-  // self-loop; and blast-radius answers "what does this reach", where a
-  // containment link is not part of the answer. The epic lens reverses the
-  // tether (member -> container) so layout converges the subtree on the epic;
-  // see `epicDetail`.
+  // Containment tethers, where blast-radius is the odd one out: it answers
+  // "what does this reach", and a containment link is not part of the answer.
+  // The epic lens reverses the tether (member -> container) so layout converges
+  // the subtree on the epic; see `epicDetail`.
   if (lens === "full" || lens === "epic") {
     for (const id of context.ids) {
       const parent = model.nodes[id]?.parent;
       if (!parent || !shown.has(parent) || !shown.has(id)) continue;
       edges.push(
         lens === "epic"
-          ? { blocker: id, blocked: parent, weight: 1, rolled: false, kind: "contains" }
-          : { blocker: parent, blocked: id, weight: 1, rolled: false, kind: "contains" }
+          ? { blocker: id, blocked: parent, kind: "contains" }
+          : { blocker: parent, blocked: id, kind: "contains" }
       );
     }
     edges.sort(
@@ -558,12 +468,11 @@ function finish(
 
   nodes.sort((a, b) => a.rank - b.rank || byId(a.id, b.id));
 
-  const represented = new Set(nodes.flatMap((node) => node.members));
   const result: LensResult = {
     lens,
     nodes,
     edges,
-    omitted: Math.max(0, total - represented.size),
+    omitted: Math.max(0, total - nodes.length),
   };
   if (radius) result.focusId = radius.focusId;
   return result;

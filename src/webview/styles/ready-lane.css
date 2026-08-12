@@ -98,21 +98,14 @@
   color: var(--vscode-descriptionForeground);
 }
 
-.ready-lane-row-meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-  padding-left: calc(13px + var(--spacing-sm));
-  font-size: 0.85em;
-  color: var(--vscode-descriptionForeground);
-}
-
 .ready-lane-cycle {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);
   white-space: nowrap;
+  flex: 0 0 auto;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
 }
 
 .ready-lane-cycle-dot {

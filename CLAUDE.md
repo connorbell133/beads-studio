@@ -37,18 +37,18 @@ Exception: If already on a feature branch and told to continue on it (e.g., mult
 
 ```bash
 # Link extension to VS Code extensions directory
-ln -s "$(pwd)" ~/.vscode/extensions/vscode-beads
+ln -s "$(pwd)" ~/.vscode/extensions/beads-ui
 
 # Reload VS Code window: Cmd+Shift+P → "Developer: Reload Window"
 # Unlink when done
-rm ~/.vscode/extensions/vscode-beads
+rm ~/.vscode/extensions/beads-ui
 ```
 
 **Option 3: Install VSIX locally**
 
 ```bash
-bun run package                              # Creates vscode-beads-0.1.0.vsix
-code --install-extension vscode-beads-0.1.0.vsix
+bun run package                              # Creates beads-ui-0.14.4.vsix
+code --install-extension beads-ui-0.14.4.vsix
 ```
 
 ## Architecture

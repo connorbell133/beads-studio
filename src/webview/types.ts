@@ -129,7 +129,9 @@ export type ExtensionMessage =
   | { type: "setError"; error: string | null }
   | { type: "setSettings"; settings: WebviewSettings }
   | { type: "refresh" }
-  | { type: "showToast"; text: string };
+  | { type: "showToast"; text: string }
+  | { type: "applyIssuesPreset"; presetId: string }
+  | { type: "setPulse"; events: { id: string; at: number }[] };
 
 // Messages from webview to extension
 export type WebviewMessage =
@@ -151,7 +153,9 @@ export type WebviewMessage =
   | { type: "openBeadDetails"; beadId: string }
   | { type: "viewInGraph"; beadId: string }
   | { type: "copyBeadId"; beadId: string }
-  | { type: "openFile"; filePath: string; line?: number };
+  | { type: "openFile"; filePath: string; line?: number }
+  | { type: "openIssuesPreset"; presetId: string }
+  | { type: "openGraph" };
 
 // Human-readable labels
 export const PRIORITY_LABELS: Record<BeadPriority, string> = {

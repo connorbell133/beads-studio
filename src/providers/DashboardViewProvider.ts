@@ -13,12 +13,16 @@ import { BaseViewProvider } from "./BaseViewProvider";
 import { BeadsProjectManager } from "../backend/BeadsProjectManager";
 import { BeadsSummary, BUILT_IN_STATUSES } from "../backend/types";
 import { deriveSummary } from "../graph/summary";
+import { BecameReadyEvent, diffReady, pruneEvents } from "../graph/pulse";
 import { Logger } from "../utils/logger";
 
 export class DashboardViewProvider extends BaseViewProvider {
   protected readonly viewType = "beadsDashboard";
   private static readonly MIN_LOADING_MS = 500;
   private loadSequence = 0;
+  /** Ready ids at the previous load; null until a baseline exists. */
+  private prevReady: Set<string> | null = null;
+  private becameReady: BecameReadyEvent[] = [];
 
   constructor(
     extensionUri: vscode.Uri,
@@ -30,6 +34,11 @@ export class DashboardViewProvider extends BaseViewProvider {
 
   protected async loadData(reason: "initial" | "projectChange" | "manualRefresh" | "background" = "background"): Promise<void> {
     const thisRequest = ++this.loadSequence;
+    if (reason === "projectChange") {
+      // Another project's ready set is not a baseline for this one.
+      this.prevReady = null;
+      this.becameReady = [];
+    }
     const client = this.projectManager.getClient();
     if (!client) {
       this.postMessage({
@@ -75,22 +84,23 @@ export class DashboardViewProvider extends BaseViewProvider {
       this.postMessage({ type: "setSummary", summary });
       this.postMessage({ type: "setGraph", graph: model });
 
-      // The highlight lists now follow the graph too: "ready" is what a person
-      // can actually pick up, not everything wearing the `open` label, and
-      // "blocked" is derived from open blockers rather than a status someone
-      // remembered to set.
-      const byId = new Map(beads.map((bead) => [bead.id, bead]));
-      const pick = (ids: string[]) =>
-        ids
-          .map((id) => byId.get(id))
-          .filter((bead): bead is (typeof beads)[number] => Boolean(bead))
-          .slice(0, 5);
-      const inProgressBeads = beads.filter((b) => b.status === "in_progress").slice(0, 5);
+      // The full set, not a highlight subset: the pulse needs closed beads
+      // and honest label counts, and the webview derives its own slices.
+      this.postMessage({ type: "setBeads", beads });
 
-      this.postMessage({
-        type: "setBeads",
-        beads: [...pick(model.ready), ...pick(model.blocked), ...inProgressBeads],
-      });
+      // The one fact only this process can know: which ids became ready
+      // between two loads. The webview turns it into "newly ready" via
+      // computePulse; the first load is baseline only.
+      const readyNow = new Set(model.ready);
+      const at = Date.now();
+      if (this.prevReady) {
+        this.becameReady = pruneEvents(
+          [...this.becameReady, ...diffReady(this.prevReady, model.ready, at)],
+          at
+        );
+      }
+      this.prevReady = readyNow;
+      this.postMessage({ type: "setPulse", events: this.becameReady });
       this.setLoading(false);
     } catch (err) {
       if (showLoading) {

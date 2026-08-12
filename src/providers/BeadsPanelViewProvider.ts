@@ -34,6 +34,11 @@ export class BeadsPanelViewProvider extends BaseViewProvider {
     this.postMessage({ type: "toggleTreeMode" });
   }
 
+  /** Applies a status preset, replacing any hand-picked filters. */
+  public applyPreset(presetId: string): void {
+    this.postMessage({ type: "applyIssuesPreset", presetId });
+  }
+
   /**
    * Set the selected bead ID and notify webview
    */

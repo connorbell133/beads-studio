@@ -12,7 +12,13 @@
  */
 
 import React from "react";
-import { EpicOption, GraphLens, GRAPH_LENSES, LENS_LABELS } from "../../graph/lens";
+import {
+  EpicOption,
+  GraphLens,
+  GRAPH_LENSES,
+  LENS_DESCRIPTIONS,
+  LENS_LABELS,
+} from "../../graph/lens";
 import { Dropdown, DropdownItem } from "./Dropdown";
 
 export interface GraphToolbarProps {
@@ -90,7 +96,7 @@ export function GraphToolbar({
                   ? "Select a bead to see what it touches"
                   : option === "epic" && epics.length === 0
                     ? "No epics in this project yet"
-                    : undefined
+                    : LENS_DESCRIPTIONS[option]
               }
               onClick={() => onLensChange(option)}
             >

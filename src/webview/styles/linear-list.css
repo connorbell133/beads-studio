@@ -1,0 +1,221 @@
+/* ---- Linear-style issues list --------------------------------------------
+   Rows are [priority | id | status | type | title | dep chips | meta],
+   grouped under their epic with a sticky, collapsible header. Compact
+   density: 26px rows, VS Code-native hues throughout. */
+
+.lin-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--border-radius);
+}
+
+.lin-group + .lin-group {
+  margin-top: 2px;
+}
+
+.lin-group-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  height: 28px;
+  padding: 0 var(--spacing-sm);
+  background-color: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.lin-group-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.lin-group-chevron:hover {
+  background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.lin-group-title {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  text-align: left;
+}
+
+.lin-group-title:hover:not(.lin-group-title-plain) {
+  text-decoration: underline;
+}
+
+.lin-group-title-plain {
+  cursor: default;
+  color: var(--vscode-descriptionForeground);
+}
+
+.lin-group-count {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.lin-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  height: 26px;
+  padding: 0 var(--spacing-sm);
+  cursor: pointer;
+}
+
+.lin-row:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.lin-row.selected {
+  background-color: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+/* An ancestor kept only so its filtered descendants have a home. */
+.lin-row.lin-context {
+  opacity: 0.6;
+}
+
+.lin-id {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.lin-id:hover {
+  color: var(--vscode-foreground);
+}
+
+.lin-id.copied {
+  color: var(--vscode-charts-green);
+}
+
+.lin-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.lin-spacer {
+  flex: 1;
+}
+
+/* Dependency pills: hue on the glyph, the count in muted text. */
+.lin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 8px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
+}
+
+.lin-chip-blockedBy svg {
+  color: var(--vscode-charts-red);
+}
+
+.lin-chip-blocks svg {
+  color: var(--vscode-charts-blue);
+}
+
+.lin-more {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
+}
+
+.lin-date {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.lin-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  font-size: 8px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.status-ring,
+.priority-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* Glyphs that are pickers: bare trigger, a soft ring on hover. */
+.lin-select {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.lin-select .dropdown-trigger.lin-select-trigger {
+  display: inline-flex;
+  padding: 2px;
+  height: auto;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.lin-select .dropdown-trigger.lin-select-trigger:hover {
+  background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.lin-select-menu .dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.lin-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}

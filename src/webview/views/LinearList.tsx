@@ -1,0 +1,427 @@
+/**
+ * LinearList
+ *
+ * The Issues list, styled after Linear and mapped to beads-native objects.
+ * Rows are [priority | id | status | type | title | dependency chips | meta],
+ * grouped under their root parent (the epic) with a sticky, collapsible
+ * header. Filtering and facets happen upstream in TanStack state; this
+ * renders the buildTree result and nothing else.
+ */
+
+import React, { useMemo } from "react";
+import { ExpandedState } from "@tanstack/react-table";
+import {
+  Bead,
+  BeadPriority,
+  BeadStatus,
+  BeadsGraphModel,
+  BeadType,
+  PRIORITY_LABELS,
+  STATUS_LABELS,
+  sortLabels,
+} from "../types";
+import { buildTree, TreeBead, TreeRollup } from "../../graph/tree";
+import { GRAPHIC_TOKENS } from "../theme/tokens";
+import { Dropdown, DropdownItem } from "../common/Dropdown";
+import { LabelBadge } from "../common/LabelBadge";
+import { PriorityIcon } from "../common/PriorityIcon";
+import { StatusRing } from "../common/StatusRing";
+import { Timestamp } from "../common/Timestamp";
+import { TypeIcon } from "../common/TypeIcon";
+
+/** Indent per nesting level inside a group, in px. */
+const INDENT = 14;
+
+/** Right-side meta enters as the panel affords it, title-first always. */
+const SHOW_DATE_AT = 360;
+const SHOW_AVATAR_AT = 440;
+const SHOW_LABELS_AT = 560;
+
+/** Reserved key for the "No epic" group inside the persisted expanded record. */
+const NO_EPIC_KEY = "__orphans__";
+
+const PRIORITIES: readonly BeadPriority[] = [0, 1, 2, 3, 4];
+
+interface LinearListProps {
+  beads: Bead[];
+  graph: BeadsGraphModel | null;
+  /** Ids that pass the active filters; ancestors outside it render as context. */
+  matched: string[];
+  /** Live width of the list, for meta hiding. Null until first measure. */
+  width: number | null;
+  selectedBeadId: string | null;
+  copiedId: string | null;
+  expanded: ExpandedState;
+  setExpanded: React.Dispatch<React.SetStateAction<ExpandedState>>;
+  /** A search forces groups open — a hit under a collapsed epic reads as no hit. */
+  forceOpen: boolean;
+  emptyText: string;
+  onSelectBead: (id: string) => void;
+  onUpdateBead: (id: string, updates: Partial<Bead>) => void;
+  onCopyId: (id: string) => void;
+  onRowMouseEnter: (e: React.MouseEvent<HTMLElement>, id: string) => void;
+  onRowMouseLeave: () => void;
+}
+
+/** All known statuses, plus the bead's own custom value so it stays selectable. */
+function statusChoices(current: string): string[] {
+  const known = Object.keys(STATUS_LABELS);
+  return known.includes(current) ? known : [...known, current];
+}
+
+/**
+ * Status ring that is itself the picker, Linear-style. The click must not
+ * bubble — the row beneath selects the bead. The Dropdown portals its menu,
+ * so the list's scroll container cannot clip it.
+ */
+function StatusSelect({
+  status,
+  onChange,
+}: {
+  status: BeadStatus;
+  onChange: (status: BeadStatus) => void;
+}): React.ReactElement {
+  return (
+    <span className="lin-select" onClick={(e) => e.stopPropagation()}>
+      <Dropdown
+        trigger={<StatusRing status={status} />}
+        showChevron={false}
+        triggerClassName="lin-select-trigger"
+        menuClassName="lin-select-menu"
+      >
+        {statusChoices(status).map((s) => (
+          <DropdownItem key={s} active={s === status} onClick={() => onChange(s as BeadStatus)}>
+            <StatusRing status={s} />
+            {STATUS_LABELS[s] ?? s}
+          </DropdownItem>
+        ))}
+      </Dropdown>
+    </span>
+  );
+}
+
+/** Priority glyph that is itself the picker. */
+function PrioritySelect({
+  priority,
+  onChange,
+}: {
+  priority?: BeadPriority;
+  onChange: (priority: BeadPriority) => void;
+}): React.ReactElement {
+  return (
+    <span className="lin-select" onClick={(e) => e.stopPropagation()}>
+      <Dropdown
+        trigger={<PriorityIcon priority={priority} />}
+        showChevron={false}
+        triggerClassName="lin-select-trigger"
+        menuClassName="lin-select-menu"
+      >
+        {PRIORITIES.map((p) => (
+          <DropdownItem key={p} active={p === priority} onClick={() => onChange(p)}>
+            <PriorityIcon priority={p} />
+            {`P${p} ${PRIORITY_LABELS[p]}`}
+          </DropdownItem>
+        ))}
+      </Dropdown>
+    </span>
+  );
+}
+
+/**
+ * Child completion as a small ring; the fraction lives in the tooltip and
+ * aria-label so the row spends its width on the title.
+ */
+function RollupRing({ rollup }: { rollup: TreeRollup }): React.ReactElement {
+  const radius = 5;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <span
+      className="tree-rollup"
+      title={`${rollup.label} children closed`}
+      role="img"
+      aria-label={`${rollup.label} children closed`}
+    >
+      <svg className="tree-rollup-ring" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+        <circle className="tree-rollup-ring-track" cx="7" cy="7" r={radius} />
+        <circle
+          className="tree-rollup-ring-fill"
+          cx="7"
+          cy="7"
+          r={radius}
+          style={{ "--tree-rollup-hue": GRAPHIC_TOKENS.success } as React.CSSProperties}
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - rollup.percent / 100)}
+          transform="rotate(-90 7 7)"
+        />
+      </svg>
+    </span>
+  );
+}
+
+/** Dependency count as a Linear-style pill: icon + count, ids in the tooltip. */
+function DepChip({
+  kind,
+  ids,
+}: {
+  kind: "blockedBy" | "blocks";
+  ids: string[];
+}): React.ReactElement {
+  const listed = ids.slice(0, 8).join(", ") + (ids.length > 8 ? ", …" : "");
+  const title = kind === "blockedBy" ? `Blocked by: ${listed}` : `Blocking: ${listed}`;
+  return (
+    <span className={`lin-chip lin-chip-${kind}`} title={title}>
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+        {kind === "blockedBy" ? (
+          // A "banned" glyph: ring with the slash — this bead cannot move.
+          <>
+            <circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+            <line x1="2.2" y1="7.8" x2="7.8" y2="2.2" stroke="currentColor" strokeWidth="1.4" />
+          </>
+        ) : (
+          // An arrow out: other beads wait on this one.
+          <path
+            d="M1.5 5 H7 M4.8 2.2 L7.8 5 L4.8 7.8"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+      </svg>
+      {ids.length}
+    </span>
+  );
+}
+
+/** Assignee initials, Linear's avatar mapped to bd's plain-string assignee. */
+function Avatar({ assignee }: { assignee: string }): React.ReactElement {
+  const initials = assignee
+    .split(/[\s._@-]+/)
+    .filter(Boolean)
+    .map((word) => word[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  return (
+    <span className="lin-avatar" title={assignee}>
+      {initials || "?"}
+    </span>
+  );
+}
+
+function Chevron({ open }: { open: boolean }): React.ReactElement {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      style={{ transform: open ? "none" : "rotate(-90deg)" }}
+    >
+      <path fill="currentColor" d="M4.5 5.5L8 9l3.5-3.5L13 7l-5 5-5-5z" />
+    </svg>
+  );
+}
+
+/** A row with its nesting depth inside the group. */
+interface FlatRow {
+  bead: TreeBead<Bead>;
+  depth: number;
+}
+
+function flatten(rows: TreeBead<Bead>[] | undefined, depth: number, out: FlatRow[]): FlatRow[] {
+  for (const bead of rows ?? []) {
+    out.push({ bead, depth });
+    flatten(bead.subRows, depth + 1, out);
+  }
+  return out;
+}
+
+export function LinearList({
+  beads,
+  graph,
+  matched,
+  width,
+  selectedBeadId,
+  copiedId,
+  expanded,
+  setExpanded,
+  forceOpen,
+  emptyText,
+  onSelectBead,
+  onUpdateBead,
+  onCopyId,
+  onRowMouseEnter,
+  onRowMouseLeave,
+}: LinearListProps): React.ReactElement {
+  const tree = useMemo(
+    () => buildTree(beads, graph, { matched }),
+    [beads, graph, matched]
+  );
+
+  // Who waits on whom, inverted from each node's open blockers. Powers the
+  // "blocking N" chip; "blocked by N" reads straight off the node.
+  const blocking = useMemo(() => {
+    const map = new Map<string, string[]>();
+    if (!graph) return map;
+    for (const [id, node] of Object.entries(graph.nodes)) {
+      for (const blocker of node.blockedBy) {
+        const list = map.get(blocker);
+        if (list) list.push(id);
+        else map.set(blocker, [id]);
+      }
+    }
+    return map;
+  }, [graph]);
+
+  // Roots with children are the epic groups; childless roots (the no-graph
+  // fallback) and orphans are the loose beads under "No epic".
+  const groups = useMemo(
+    () =>
+      tree.roots
+        .filter((root) => root.subRows?.length)
+        .sort(
+          (a, b) => (a.priority ?? 5) - (b.priority ?? 5) || a.id.localeCompare(b.id)
+        ),
+    [tree]
+  );
+  const loose = useMemo(
+    () => [...tree.roots.filter((root) => !root.subRows?.length), ...tree.orphans],
+    [tree]
+  );
+
+  const expandedRows = expanded === true ? {} : expanded;
+  // Groups default open, Linear-style: only an explicit collapse closes one.
+  const isOpen = (id: string) => forceOpen || expandedRows[id] !== false;
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const rows = prev === true ? {} : prev;
+      return { ...rows, [id]: rows[id] === false };
+    });
+
+  const showLabels = width === null || width >= SHOW_LABELS_AT;
+  const showAvatar = width === null || width >= SHOW_AVATAR_AT;
+  const showDate = width === null || width >= SHOW_DATE_AT;
+
+  const renderRow = ({ bead, depth }: FlatRow): React.ReactElement => {
+    const node = graph?.nodes[bead.id];
+    const blockedBy = node?.blockedBy ?? [];
+    const blocks = blocking.get(bead.id) ?? [];
+    const labels = showLabels ? sortLabels(bead.labels) : [];
+    return (
+      <div
+        key={bead.id}
+        className={`lin-row${bead.id === selectedBeadId ? " selected" : ""}${bead.treeContext ? " lin-context" : ""}`}
+        style={depth > 0 ? { paddingLeft: depth * INDENT } : undefined}
+        onClick={() => onSelectBead(bead.id)}
+        onMouseEnter={(e) => onRowMouseEnter(e, bead.id)}
+        onMouseLeave={onRowMouseLeave}
+      >
+        <PrioritySelect
+          priority={bead.priority}
+          onChange={(priority) => onUpdateBead(bead.id, { priority })}
+        />
+        <button
+          type="button"
+          className={`lin-id${copiedId === bead.id ? " copied" : ""}`}
+          title={copiedId === bead.id ? "Copied!" : "Click to copy"}
+          onClick={(e) => {
+            e.stopPropagation();
+            onCopyId(bead.id);
+            onSelectBead(bead.id);
+          }}
+        >
+          {bead.id}
+        </button>
+        <StatusSelect
+          status={bead.status}
+          onChange={(status) => onUpdateBead(bead.id, { status })}
+        />
+        {bead.type && <TypeIcon type={bead.type as BeadType} size={14} />}
+        <span className="lin-title">{bead.title}</span>
+        {blockedBy.length > 0 && <DepChip kind="blockedBy" ids={blockedBy} />}
+        {blocks.length > 0 && <DepChip kind="blocks" ids={blocks} />}
+        {bead.treeRollup && <RollupRing rollup={bead.treeRollup} />}
+        <span className="lin-spacer" />
+        {labels.slice(0, 2).map((label) => (
+          <LabelBadge key={label} label={label} />
+        ))}
+        {labels.length > 2 && <span className="lin-more">+{labels.length - 2}</span>}
+        {showDate && bead.updatedAt && (
+          <span className="lin-date">
+            <Timestamp value={bead.updatedAt} format="relative" />
+          </span>
+        )}
+        {showAvatar && bead.assignee && <Avatar assignee={bead.assignee} />}
+      </div>
+    );
+  };
+
+  if (groups.length === 0 && loose.length === 0) {
+    return <div className="lin-empty">{emptyText}</div>;
+  }
+
+  return (
+    <div className="lin-list">
+      {groups.map((root) => {
+        const rows = flatten(root.subRows, 1, []);
+        const open = isOpen(root.id);
+        return (
+          <section key={root.id} className="lin-group">
+            <header className="lin-group-header">
+              <button
+                type="button"
+                className="lin-group-chevron"
+                aria-expanded={open}
+                aria-label={`${open ? "Collapse" : "Expand"} ${root.title}`}
+                onClick={() => toggle(root.id)}
+              >
+                <Chevron open={open} />
+              </button>
+              {root.type && <TypeIcon type={root.type as BeadType} size={14} />}
+              <button
+                type="button"
+                className={`lin-group-title${root.id === selectedBeadId ? " selected" : ""}`}
+                onClick={() => onSelectBead(root.id)}
+                onMouseEnter={(e) => onRowMouseEnter(e, root.id)}
+                onMouseLeave={onRowMouseLeave}
+              >
+                {root.title}
+              </button>
+              {root.treeRollup && <RollupRing rollup={root.treeRollup} />}
+              <span className="lin-group-count">{rows.length}</span>
+              <span className="lin-spacer" />
+              <StatusSelect
+                status={root.status}
+                onChange={(status) => onUpdateBead(root.id, { status })}
+              />
+            </header>
+            {open && rows.map(renderRow)}
+          </section>
+        );
+      })}
+      {loose.length > 0 && (
+        <section className="lin-group">
+          {groups.length > 0 && (
+            <header className="lin-group-header">
+              <button
+                type="button"
+                className="lin-group-chevron"
+                aria-expanded={isOpen(NO_EPIC_KEY)}
+                aria-label={`${isOpen(NO_EPIC_KEY) ? "Collapse" : "Expand"} No epic`}
+                onClick={() => toggle(NO_EPIC_KEY)}
+              >
+                <Chevron open={isOpen(NO_EPIC_KEY)} />
+              </button>
+              <span className="lin-group-title lin-group-title-plain">No epic</span>
+              <span className="lin-group-count">{loose.length}</span>
+            </header>
+          )}
+          {(groups.length === 0 || isOpen(NO_EPIC_KEY)) &&
+            loose.map((bead) => renderRow({ bead, depth: 0 }))}
+        </section>
+      )}
+    </div>
+  );
+}

@@ -50,8 +50,8 @@ const pairs = (result: { edges: Array<{ blocker: string; blocked: string }> }): 
   result.edges.map((edge) => `${edge.blocker}->${edge.blocked}`).sort();
 
 describe("lens catalogue", () => {
-  it("opens on the epic rollup, never the full graph", () => {
-    expect(DEFAULT_LENS).toBe("epic-rollup");
+  it("opens on the epic lens, never the full graph", () => {
+    expect(DEFAULT_LENS).toBe("epic");
     expect(GRAPH_LENSES).toContain("full");
     expect(GRAPH_LENSES).toContain("blast-radius");
   });
@@ -148,18 +148,6 @@ describe("full lens", () => {
     expect(applyLens(model, beads, { lens: "full" }).edges).toEqual([]);
   });
 
-  it("leaves containment out of the rollup, where members are already absorbed", () => {
-    // A tether from an epic to a member it has swallowed would be a self-loop.
-    const { model, beads } = build(
-      [raw("epic", { issue_type: "epic" }), raw("child", { parent: "epic" })],
-      [{ from: "child", to: "epic", type: "parent-child" }]
-    );
-
-    const result = applyLens(model, beads, { lens: "epic-rollup" });
-
-    expect(result.edges).toEqual([]);
-  });
-
   it("omits an edge whose blocker is not in the payload", () => {
     const { model, beads } = build([raw("b")], [blocks("b", "ghost")]);
 
@@ -187,8 +175,7 @@ describe("full lens", () => {
     const b = result.nodes.find((node) => node.id === "b");
 
     expect(a).toMatchObject({ label: "Bead a", ready: true, blocked: false, leverage: 1, rank: 0 });
-    expect(b).toMatchObject({ ready: false, blocked: true, rank: 1, rolled: false });
-    expect(a?.members).toEqual(["a"]);
+    expect(b).toMatchObject({ ready: false, blocked: true, rank: 1 });
   });
 
   it("falls back to the id when a bead has no title", () => {
@@ -204,117 +191,6 @@ describe("full lens", () => {
 
     expect(result.nodes.every((node) => node.inCycle)).toBe(true);
     expect(pairs(result)).toEqual(["a->b", "b->a"]);
-  });
-});
-
-describe("epic-rollup lens", () => {
-  // Two epics, three members each, with one cross-epic dependency and one
-  // inside an epic.
-  const project = build(
-    [
-      raw("e1", { issue_type: "epic" }),
-      raw("e2", { issue_type: "epic" }),
-      raw("t1", { parent: "e1" }),
-      raw("t2", { parent: "e1" }),
-      raw("t3", { parent: "e2" }),
-      raw("loose"),
-    ],
-    [blocks("t2", "t1"), blocks("t3", "t1"), blocks("loose", "t3")]
-  );
-
-  it("collapses ticket-level edges onto their epics and drops intra-epic ones", () => {
-    const result = applyLens(project.model, project.beads, { lens: "epic-rollup" });
-
-    expect(ids(result)).toEqual(["e1", "e2", "loose"]);
-    // t2 <- t1 lives inside e1 and disappears; t3 <- t1 becomes e2 <- e1;
-    // loose <- t3 becomes loose <- e2.
-    expect(pairs(result)).toEqual(["e1->e2", "e2->loose"]);
-  });
-
-  it("names the members it stands for and their closed count", () => {
-    const result = applyLens(project.model, project.beads, { lens: "epic-rollup" });
-    const e1 = result.nodes.find((node) => node.id === "e1");
-    const loose = result.nodes.find((node) => node.id === "loose");
-
-    expect(e1?.members).toEqual(["e1", "t1", "t2"]);
-    expect(e1?.rolled).toBe(true);
-    expect(e1?.progress).toEqual({ closed: 0, total: 3 });
-    expect(loose?.rolled).toBe(false);
-    expect(loose?.progress).toBeUndefined();
-    expect(result.omitted).toBe(0);
-  });
-
-  it("counts closed members in a rolled node's progress", () => {
-    const { model, beads } = build([
-      raw("e1", { issue_type: "epic" }),
-      raw("t1", { parent: "e1", status: "closed" }),
-      raw("t2", { parent: "e1" }),
-    ]);
-
-    const result = applyLens(model, beads, { lens: "epic-rollup" });
-
-    expect(result.nodes[0].progress).toEqual({ closed: 1, total: 3 });
-  });
-
-  it("rolls a nested epic up to the top of its chain", () => {
-    const { model, beads } = build(
-      [
-        raw("m", { issue_type: "milestone" }),
-        raw("e", { issue_type: "epic", parent: "m" }),
-        raw("t", { parent: "e" }),
-        raw("other"),
-      ],
-      [blocks("other", "t")]
-    );
-
-    const result = applyLens(model, beads, { lens: "epic-rollup" });
-
-    expect(ids(result)).toEqual(["m", "other"]);
-    expect(pairs(result)).toEqual(["m->other"]);
-  });
-
-  it("weights a rolled edge by the bead-level edges behind it", () => {
-    const { model, beads } = build(
-      [
-        raw("e1", { issue_type: "epic" }),
-        raw("e2", { issue_type: "epic" }),
-        raw("t1", { parent: "e1" }),
-        raw("t2", { parent: "e1" }),
-        raw("t3", { parent: "e2" }),
-      ],
-      [blocks("t3", "t1"), blocks("t3", "t2")]
-    );
-
-    const result = applyLens(model, beads, { lens: "epic-rollup" });
-
-    expect(result.edges).toEqual([
-      { blocker: "e1", blocked: "e2", weight: 2, rolled: true, kind: "blocks" },
-    ]);
-  });
-
-  it("stands a bead on its own when its parent is a hidden type", () => {
-    const { model, beads } = build([
-      raw("g", { issue_type: "gate" }),
-      raw("t", { parent: "g" }),
-    ]);
-
-    const result = applyLens(model, beads, { lens: "epic-rollup" });
-
-    expect(ids(result)).toEqual(["t"]);
-    expect(result.nodes[0].rolled).toBe(false);
-  });
-
-  it("survives a parent cycle rather than looping on it", () => {
-    const { model, beads } = build([
-      raw("a", { parent: "b" }),
-      raw("b", { parent: "a" }),
-    ]);
-
-    const result = applyLens(model, beads, { lens: "epic-rollup" });
-
-    // The ring elects its lowest id rather than vanishing from the canvas.
-    expect(ids(result)).toEqual(["a"]);
-    expect(result.nodes.flatMap((node) => node.members).sort()).toEqual(["a", "b"]);
   });
 });
 
@@ -506,65 +382,36 @@ describe("lens purity", () => {
 });
 
 describe("chooseInitialLens", () => {
-  it("opens on the rollup when the rollup has something to draw", () => {
-    const { model, beads } = build(
-      [
-        raw("e1", { issue_type: "epic" }),
-        raw("e2", { issue_type: "epic" }),
-        raw("t1", { parent: "e1" }),
-        raw("t2", { parent: "e2" }),
-      ],
-      [blocks("t2", "t1")]
-    );
-
-    expect(chooseInitialLens(model, beads)).toBe("epic-rollup");
-  });
-
-  it("falls through to the full graph when every edge lives inside one epic", () => {
-    // The shape that made the default view four disconnected dots on a project
-    // with real sequencing: one epic, all its members blocking each other.
+  it("opens on the epic lens when the project has an epic to open up", () => {
     const { model, beads } = build(
       [
         raw("e1", { issue_type: "epic" }),
         raw("a", { parent: "e1" }),
         raw("b", { parent: "e1" }),
-        raw("c", { parent: "e1" }),
-      ],
-      [blocks("b", "a"), blocks("c", "b")]
-    );
-
-    expect(chooseInitialLens(model, beads)).toBe("full");
-  });
-
-  it("stays on the rollup when there are no blocking links anywhere", () => {
-    // Nothing to show either way, so keep the readable default rather than
-    // dumping every bead on screen.
-    const { model, beads } = build([raw("a"), raw("b"), raw("c")]);
-
-    expect(chooseInitialLens(model, beads)).toBe("epic-rollup");
-  });
-
-  it("ignores containment when deciding - a tether is not sequencing", () => {
-    const { model, beads } = build(
-      [raw("e1", { issue_type: "epic" }), raw("a", { parent: "e1" })],
-      [{ from: "a", to: "e1", type: "parent-child" }]
-    );
-
-    expect(chooseInitialLens(model, beads)).toBe("epic-rollup");
-  });
-
-  it("does not count an edge whose blocker has closed", () => {
-    // A resolved blocker is not sequencing anyone any more.
-    const { model, beads } = build(
-      [
-        raw("e1", { issue_type: "epic" }),
-        raw("a", { parent: "e1", status: "closed" }),
-        raw("b", { parent: "e1" }),
       ],
       [blocks("b", "a")]
     );
 
-    expect(chooseInitialLens(model, beads)).toBe("epic-rollup");
+    expect(chooseInitialLens(model, beads)).toBe("epic");
+  });
+
+  it("falls through to the full graph when there are no epics", () => {
+    // Nothing for the epic lens to draw; orphans belong to the full lens.
+    const { model, beads } = build([raw("a"), raw("b")], [blocks("b", "a")]);
+
+    expect(chooseInitialLens(model, beads)).toBe("full");
+  });
+
+  it("counts an implicit container - containment is fact, typing is convention", () => {
+    const { model, beads } = build([raw("t"), raw("sub", { parent: "t" })]);
+
+    expect(chooseInitialLens(model, beads)).toBe("epic");
+  });
+
+  it("offers an empty epic as a destination rather than falling to the hairball", () => {
+    const { model, beads } = build([raw("e1", { issue_type: "epic" }), raw("loose")]);
+
+    expect(chooseInitialLens(model, beads)).toBe("epic");
   });
 });
 
@@ -617,7 +464,6 @@ describe("epic lens", () => {
     const member = result.nodes.find((node) => node.id === "t2");
 
     expect(epic?.progress).toEqual({ closed: 1, total: 3 });
-    expect(epic?.rolled).toBe(false);
     expect(member?.progress).toBeUndefined();
   });
 

@@ -46,13 +46,13 @@
 Create via web (CLI command deprecated): https://aka.ms/vscode-create-publisher
 
 Required fields:
-- **Name**: Display name (e.g., `Planet57`)
-- **ID**: Unique identifier (e.g., `planet57`) - must match `publisher` in package.json
+- **Name**: Display name (e.g., `Connor Bell`)
+- **ID**: Unique identifier (e.g., `connorbell133`) - must match `publisher` in package.json
 
 ### 4. Login
 
 ```bash
-vsce login planet57
+vsce login connorbell133
 # Paste PAT when prompted
 ```
 
@@ -104,14 +104,14 @@ vsce publish major  # 0.1.0 → 1.0.0
 vsce ls                              # List files that will be packaged
 vsce package                         # Create VSIX locally
 vsce publish                         # Publish to marketplace
-vsce unpublish planet57.vscode-beads # Remove from marketplace
+vsce unpublish connorbell133.beads-ui # Remove from marketplace
 ```
 
 ## README on the Listing
 
 `vsce package` copies README.md **markup** into the VSIX, so wording, layout and
 `<img width>` attributes only reach the listing on the next publish. Relative
-image links are rewritten to `https://github.com/jdillon/vscode-beads/raw/HEAD/<path>`
+image links are rewritten to `https://github.com/connorbell133/vscode-beads/raw/HEAD/<path>`
 and fetched live from the default branch.
 
 Consequence: renaming or deleting an image that the *published* README references
@@ -123,9 +123,9 @@ change and the release together.
 
 Adds a verified checkmark next to your publisher name on the marketplace.
 
-1. Go to [Publisher Management](https://marketplace.visualstudio.com/manage/publishers/planet57)
+1. Go to [Publisher Management](https://marketplace.visualstudio.com/manage/publishers/connorbell133)
 2. Select publisher → Details
-3. Add your domain (e.g., `planet57.com`)
+3. Add your domain (e.g., `connorbell.dev`)
 4. Add the DNS TXT record they provide (e.g., `ms-verify=xxxxx`)
 5. Click verify
 
@@ -133,7 +133,7 @@ Adds a verified checkmark next to your publisher name on the marketplace.
 
 ## Links
 
-- [Extension URL](https://marketplace.visualstudio.com/items?itemName=planet57.vscode-beads)
-- [Publisher Management](https://marketplace.visualstudio.com/manage/publishers/planet57)
+- [Extension URL](https://marketplace.visualstudio.com/items?itemName=connorbell133.beads-ui)
+- [Publisher Management](https://marketplace.visualstudio.com/manage/publishers/connorbell133)
 - [Publishing Extensions Docs](https://code.visualstudio.com/api/working-with-extensions/publishing-extension)
 - [vsce CLI Reference](https://github.com/microsoft/vscode-vsce)

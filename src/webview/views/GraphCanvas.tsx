@@ -10,8 +10,8 @@
  *
  * Three lenses share one render path, because the lens is a filter applied
  * before layout (src/graph/lens.ts) and layout is pure (src/graph/layout.ts).
- * It opens on the epic rollup - a five-hundred-node hairball on open is a
- * decision-paralysis surface with no entry point.
+ * It opens on the epic lens, one epic's subtree - a five-hundred-node hairball
+ * on open is a decision-paralysis surface with no entry point.
  *
  * Past that opening, four affordances keep it usable at the sizes real projects
  * reach, each answering a question the user has at a specific scale:
@@ -24,7 +24,7 @@
  *                        removed - removing re-runs dagre and moves everything.
  *   Why is this a
  *   hairball?            A density threshold (src/graph/density.ts). Above a
- *                        node count the canvas collapses to the rollup and says
+ *                        node count the canvas collapses to one epic and says
  *                        so, with an explicit override.
  *   What connects to
  *   what?                Hover, or the keyboard cursor, dims everything outside
@@ -49,9 +49,9 @@
  *   - Type is carried by the icon, not by the fill. Six usable hues cannot
  *     encode fourteen types and should not try.
  *
- * Only blocking edges are drawn. parent-child is how the rollup groups, never
- * a line - drawing containment alongside blockage is what makes a dependency
- * graph unreadable.
+ * Only blocking edges are drawn as arrows. parent-child is membership, shown
+ * on the epic lens as a subdued tether - drawing containment as more arrows is
+ * what makes a dependency graph unreadable.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -59,6 +59,12 @@ import { Bead, BeadsGraphModel } from "../types";
 import { GRAPHIC_TOKENS, readinessHue, typeHue } from "../theme/tokens";
 import { icons } from "../icons";
 import { GraphToolbar } from "../common/GraphToolbar";
+import { BeadFilterBar } from "../common/BeadFilterBar";
+import {
+  BeadFilters,
+  beadMatchesFilters,
+  defaultBeadFilters,
+} from "../common/filter-presets";
 import {
   applyLens,
   chooseInitialLens,
@@ -91,7 +97,7 @@ export interface GraphCanvasProps {
   graph: BeadsGraphModel | null;
   /**
    * Controlled lens. Omit to let the canvas own it, in which case it opens on
-   * the epic rollup.
+   * the lens `chooseInitialLens` picks.
    */
   lens?: GraphLens;
   /** Called on every lens change, whether the lens is controlled or not. */
@@ -117,7 +123,7 @@ export interface GraphCanvasProps {
 const NODE_WIDTH = 208;
 const NODE_HEIGHT = 52;
 /** Rolled nodes carry a third line: how many of their members have closed. */
-const ROLLED_NODE_HEIGHT = 68;
+const PROGRESS_NODE_HEIGHT = 68;
 const ICON_SIZE = 13;
 const RAIL_WIDTH = 4;
 const CORNER = 4;
@@ -169,6 +175,14 @@ export function GraphCanvas({
   /** Set once the user has read the density notice and asked for it anyway. */
   const [densityOverride, setDensityOverride] = useState(false);
   const [query, setQuery] = useState("");
+  // The same filters the Issues list offers, applied to what the lenses may
+  // draw. "All" by default: on a DAG, closed beads are part of the story
+  // (epic progress, finished chains) until the user says otherwise.
+  const [filters, setFilters] = useState<BeadFilters>(() => defaultBeadFilters("all"));
+  const visibleBeads = useMemo(
+    () => beads.filter((bead) => beadMatchesFilters(bead, filters)),
+    [beads, filters]
+  );
   /** The node under the pointer, and the node under the keyboard cursor. */
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [cursorId, setCursorId] = useState<string | null>(null);
@@ -205,23 +219,24 @@ export function GraphCanvas({
   // so a 500-node request never pays for a dagre pass nobody can read.
   const view = useMemo(() => {
     if (!graph) return null;
-    const requested = applyLens(graph, beads, { lens: requestedLens, focusId: anchor, epicId });
+    const requested = applyLens(graph, visibleBeads, { lens: requestedLens, focusId: anchor, epicId });
     const density = resolveDensity({
       requested: requestedLens,
       nodeCount: requested.nodes.length,
       override: densityOverride,
+      // Collapsing to the epic lens is only an offer when it can draw something.
+      collapsible: epics.length > 0,
     });
     const result =
       density.lens === requestedLens
         ? requested
-        : applyLens(graph, beads, { lens: density.lens, focusId: anchor, epicId });
+        : applyLens(graph, visibleBeads, { lens: density.lens, focusId: anchor, epicId });
 
-    // The epic's card carries its rollup line, so it needs the taller body
-    // even though it is not a rolled node.
+    // The epic's card carries its progress line, so it needs the taller body.
     const sized = result.nodes.map((node) => ({
       id: node.id,
       width: NODE_WIDTH,
-      height: node.rolled || node.progress ? ROLLED_NODE_HEIGHT : NODE_HEIGHT,
+      height: node.progress ? PROGRESS_NODE_HEIGHT : NODE_HEIGHT,
     }));
     const laidOut = layoutGraph(
       sized,
@@ -229,11 +244,15 @@ export function GraphCanvas({
       { direction: "LR" }
     );
     return { result, density, sized, laidOut };
-  }, [graph, beads, requestedLens, anchor, epicId, densityOverride]);
+  }, [graph, visibleBeads, requestedLens, anchor, epicId, densityOverride, epics]);
 
   const nodes = view?.result.nodes ?? [];
   const edges = view?.result.edges ?? [];
   const drawnLens = view?.result.lens ?? requestedLens;
+  // On the epic lens the anchor epic is the destination the subtree converges
+  // into, not work to pick up, and it is drawn as a goal rather than by
+  // readiness. Only there: on other lenses an epic is just another bead.
+  const goalId = drawnLens === "epic" ? (view?.result.focusId ?? null) : null;
 
   // Re-choose when the current lens turns out to have nothing to draw.
   //
@@ -246,9 +265,9 @@ export function GraphCanvas({
   useEffect(() => {
     if (lens !== undefined || lensPinned.current || !graph) return;
     if (view?.result.edges.some((edge) => edge.kind === "blocks")) return;
-    const better = chooseInitialLens(graph, beads);
+    const better = chooseInitialLens(graph, visibleBeads);
     if (better !== requestedLens) setOwnLens(better);
-  }, [graph, beads, view, lens, requestedLens]);
+  }, [graph, visibleBeads, view, lens, requestedLens]);
   const bounds = view?.laidOut.bounds;
   const positions = view?.laidOut.positions ?? NO_POSITIONS;
 
@@ -267,7 +286,7 @@ export function GraphCanvas({
   const find = useMemo(
     () =>
       findMatches(
-        nodes.map((node) => ({ id: node.id, label: node.label, members: node.members })),
+        nodes.map((node) => ({ id: node.id, label: node.label })),
         query
       ),
     [nodes, query]
@@ -475,9 +494,15 @@ export function GraphCanvas({
         neighbours.blocked.length === 0
           ? "blocks nothing"
           : `blocks ${neighbours.blocked.length}`;
-      return `${node.id}, ${node.label}. ${blockers}, ${blocked}.`;
+      const goal =
+        node.id === goalId && node.progress
+          ? ` The goal this epic's work converges on; ${node.progress.closed} of ${node.progress.total} closed.`
+          : node.id === goalId
+            ? " The goal this epic's work converges on."
+            : "";
+      return `${node.id}, ${node.label}. ${blockers}, ${blocked}.${goal}`;
     },
-    [nodes, edges]
+    [nodes, edges, goalId]
   );
 
   /**
@@ -596,7 +621,9 @@ export function GraphCanvas({
         matchCount={find.active ? find.matches.length : null}
         nodeCount={nodes.length}
         edgeCount={edges.length}
-        omitted={view?.result.omitted ?? 0}
+        // Beads the preset filtered away are "not shown" in the same sense as
+        // beads the lens left out; the count owns both.
+        omitted={(view?.result.omitted ?? 0) + (beads.length - visibleBeads.length)}
         onZoomIn={() => zoomBy(1 / 1.25)}
         onZoomOut={() => zoomBy(1.25)}
         onFitAll={() => setViewBox(fit)}
@@ -604,6 +631,9 @@ export function GraphCanvas({
         canFit={Boolean(fit)}
         canFitSelection={Boolean(fitTarget)}
       />
+
+      {/* The same filter row the Issues list carries, under the toolbar. */}
+      <BeadFilterBar beads={beads} filters={filters} onChange={setFilters} />
 
       {view && <DensityNotice view={view} onOverride={setDensityOverride} />}
 
@@ -618,11 +648,7 @@ export function GraphCanvas({
           lens={drawnLens}
           nodeCount={nodes.length}
           anchored={Boolean(anchor)}
-          hiddenByLens={
-            graph
-              ? Object.values(graph.nodes).reduce((n, node) => n + node.blockedBy.length, 0)
-              : 0
-          }
+          hasEpics={epics.length > 0}
         />
       ) : (
         <svg
@@ -699,7 +725,7 @@ export function GraphCanvas({
                     d={edgePath(path)}
                     fill="none"
                     stroke={cycle ? GRAPHIC_TOKENS.warning : GRAPHIC_TOKENS.neutral}
-                    strokeWidth={contains ? 1 : edge && edge.weight > 1 ? 2.5 : 1.25}
+                    strokeWidth={contains ? 1 : 1.25}
                     strokeDasharray={cycle ? "5 4" : contains ? "1 4" : undefined}
                     markerEnd={
                       contains ? undefined : `url(#${markerId}-${cycle ? "arrow-cycle" : "arrow"})`
@@ -736,6 +762,7 @@ export function GraphCanvas({
                   height={size.height}
                   selected={node.id === selectedBeadId}
                   focused={node.id === anchor && drawnLens === "blast-radius"}
+                  goal={node.id === goalId}
                   cursor={node.id === cursorId}
                   matched={find.active && matched.has(node.id)}
                   dimmed={
@@ -786,7 +813,7 @@ function DensityNotice({
     return (
       <p className="graph-canvas-density" role="status">
         {LENS_LABELS[density.requested]} would draw {density.nodeCount} beads at once, past what
-        stays legible here. Showing {LENS_LABELS["epic-rollup"].toLowerCase()} instead.{" "}
+        stays legible here. Showing one epic instead.{" "}
         <button type="button" className="graph-canvas-density-action" onClick={() => onOverride(true)}>
           Draw all {density.nodeCount} anyway
         </button>
@@ -803,7 +830,7 @@ function DensityNotice({
           className="graph-canvas-density-action"
           onClick={() => onOverride(false)}
         >
-          Collapse to {LENS_LABELS["epic-rollup"].toLowerCase()}
+          Collapse to one epic
         </button>
       </p>
     );
@@ -829,6 +856,12 @@ interface GraphNodeProps {
   height: number;
   selected: boolean;
   focused: boolean;
+  /**
+   * The epic-lens anchor: the destination the subtree converges into. Wears
+   * the accent instead of a readiness hue - it is not work to pick up, and
+   * painting it ready's green would call the finish line available.
+   */
+  goal: boolean;
   /** Under the keyboard cursor. Distinct from selected: this one is transient. */
   cursor: boolean;
   matched: boolean;
@@ -845,22 +878,24 @@ function GraphNode({
   height,
   selected,
   focused,
+  goal,
   cursor,
   matched,
   dimmed,
   onSelect,
   onHover,
 }: GraphNodeProps): React.ReactElement {
-  const hue = readinessHue(node.status, node.blocked);
+  const hue = goal ? GRAPHIC_TOKENS.accent : readinessHue(node.status, node.blocked);
   const classes = [
     "graph-canvas-node",
     selected ? "selected" : "",
     focused ? "focused" : "",
+    goal ? "goal" : "",
     cursor ? "cursor" : "",
     matched ? "matched" : "",
     dimmed ? "dimmed" : "",
     node.inCycle ? "in-cycle" : "",
-    node.ready ? "ready" : "",
+    node.ready && !goal ? "ready" : "",
     node.coordination ? "coordination" : "",
   ]
     .filter(Boolean)
@@ -910,19 +945,24 @@ function GraphNode({
       <text className="graph-canvas-node-id" x={34} y={height / 2 - 9}>
         {node.id}
       </text>
-      {node.ready && (
+      {goal && (
+        <text className="graph-canvas-node-flag" x={width - 12} y={height / 2 - 9} textAnchor="end">
+          goal
+        </text>
+      )}
+      {!goal && node.ready && (
         <text className="graph-canvas-node-flag" x={width - 12} y={height / 2 - 9} textAnchor="end">
           ready
         </text>
       )}
-      {!node.ready && node.leverage > 0 && (
+      {!goal && !node.ready && node.leverage > 0 && (
         <text className="graph-canvas-node-flag" x={width - 12} y={height / 2 - 9} textAnchor="end">
           unblocks {node.leverage}
         </text>
       )}
       {/* The word behind the warning hue - state is never colour alone. Only
           where no more useful flag already claims the corner. */}
-      {!node.ready && node.blocked && node.leverage === 0 && (
+      {!goal && !node.ready && node.blocked && node.leverage === 0 && (
         <text className="graph-canvas-node-flag" x={width - 12} y={height / 2 - 9} textAnchor="end">
           blocked
         </text>
@@ -939,9 +979,7 @@ function GraphNode({
       )}
 
       {/* One text node: a <title> with element children renders as markup. */}
-      <title>
-        {`${node.id} — ${node.label}${node.rolled ? ` (${node.members.length} beads)` : ""}`}
-      </title>
+      <title>{`${node.id} — ${node.label}`}</title>
     </g>
   );
 }
@@ -983,28 +1021,51 @@ function EmptyCanvas({
   lens,
   nodeCount,
   anchored,
-  hiddenByLens,
+  hasEpics,
 }: {
   lens: GraphLens;
   nodeCount: number;
   anchored: boolean;
-  /** Blocking links the model has that this lens did not draw. */
-  hiddenByLens: number;
+  /** Whether the project has any epic the epic lens could draw. */
+  hasEpics: boolean;
 }): React.ReactElement {
-  if (lens === "blast-radius" && !anchored) {
+  if (lens === "blast-radius") {
+    if (!anchored) {
+      return (
+        <div className="graph-canvas-empty">
+          <p>Select a bead to see what it blocks and what blocks it.</p>
+        </div>
+      );
+    }
     return (
       <div className="graph-canvas-empty">
-        <p>Select a bead to see what it blocks and what blocks it.</p>
+        <p>Nothing blocks the selected bead, and it blocks nothing.</p>
+        <p className="graph-canvas-empty-hint">
+          Select a different bead, or switch the lens above to{" "}
+          <strong>{LENS_LABELS.full}</strong> to see the whole project.
+        </p>
       </div>
     );
   }
 
   if (lens === "epic") {
+    if (!hasEpics) {
+      return (
+        <div className="graph-canvas-empty">
+          <p>This project has no epics yet.</p>
+          <p className="graph-canvas-empty-hint">
+            Group related work under one with <code>bd create --type=epic</code> and{" "}
+            <code>--parent</code>, or switch the lens above to{" "}
+            <strong>{LENS_LABELS.full}</strong> to see everything.
+          </p>
+        </div>
+      );
+    }
     if (nodeCount === 0) {
       return (
         <div className="graph-canvas-empty">
-          <p>No epic to draw.</p>
-          <p className="graph-canvas-empty-hint">Pick one from the toolbar.</p>
+          <p>No epic chosen.</p>
+          <p className="graph-canvas-empty-hint">Pick one from the dropdown in the toolbar.</p>
         </div>
       );
     }
@@ -1030,32 +1091,16 @@ function EmptyCanvas({
     );
   }
 
-  // A project whose every edge sits inside one epic has real dependencies that
-  // this lens rolled away. Telling that user to run `bd dep add` is wrong twice
-  // over: the links exist, and the fix is a different lens.
-  if (hiddenByLens > 0 && lens !== "full") {
-    return (
-      <div className="graph-canvas-empty">
-        <p>
-          {hiddenByLens} blocking {hiddenByLens === 1 ? "link" : "links"}, all inside a single
-          epic.
-        </p>
-        <p className="graph-canvas-empty-hint">
-          Rolled-up epics hide the sequencing within them. Switch to{" "}
-          <strong>{LENS_LABELS.full}</strong> to see it.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="graph-canvas-empty">
       <p>
-        {nodeCount} {nodeCount === 1 ? "bead" : "beads"}, no blocking links between them.
+        {nodeCount} {nodeCount === 1 ? "bead" : "beads"}, and no blocking links between them yet
+        &mdash; nothing here has to wait on anything else.
       </p>
       <p className="graph-canvas-empty-hint">
-        Link two with <code>bd dep add &lt;blocked&gt; &lt;blocker&gt;</code>, or read the list
-        below.
+        Record that one bead blocks another with{" "}
+        <code>bd dep add &lt;blocked&gt; &lt;blocker&gt;</code> and it will appear here as an
+        arrow.
       </p>
     </div>
   );

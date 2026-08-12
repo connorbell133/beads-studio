@@ -210,6 +210,14 @@ export abstract class BeadsWebviewHost {
         await this.handleOpenFile(message.filePath, message.line);
         break;
 
+      case "openIssuesPreset":
+        vscode.commands.executeCommand("beads.openIssuesWithPreset", message.presetId);
+        break;
+
+      case "openGraph":
+        vscode.commands.executeCommand("beads.openGraph");
+        break;
+
       default:
         await this.handleCustomMessage(message);
     }

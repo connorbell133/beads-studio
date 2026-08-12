@@ -33,12 +33,6 @@ export interface FindTarget {
   id: string;
   /** Title when there is one, id otherwise. */
   label: string;
-  /**
-   * Beads this node stands for, on a rolled-up node. A rollup is the only thing
-   * drawn for its members, so a member matching has to light the container -
-   * otherwise searching for a bead inside an epic reports nothing at all.
-   */
-  members?: readonly string[];
 }
 
 export interface FindResult {
@@ -81,9 +75,7 @@ export function findMatches(targets: readonly FindTarget[], rawQuery: string): F
 }
 
 function matchesTarget(target: FindTarget, query: string): boolean {
-  if (target.id.toLowerCase().includes(query)) return true;
-  if (target.label.toLowerCase().includes(query)) return true;
-  return (target.members ?? []).some((member) => member.toLowerCase().includes(query));
+  return target.id.toLowerCase().includes(query) || target.label.toLowerCase().includes(query);
 }
 
 /** `match` / `dim` while a query is active, `none` when it is not. */

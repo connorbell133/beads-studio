@@ -1,11 +1,15 @@
 {
-  "name": "vscode-beads",
-  "displayName": "Beads",
-  "description": "VS Code extension for managing Beads issues",
+  "name": "beads-ui",
+  "displayName": "Beads UI",
+  "description": "Dashboard, kanban board, and dependency graph for the Beads (bd) issue tracker",
   "version": "0.14.4",
-  "publisher": "planet57",
+  "publisher": "connorbell133",
   "license": "Apache-2.0",
   "icon": "resources/icon.png",
+  "galleryBanner": {
+    "color": "#14161e",
+    "theme": "dark"
+  },
   "files": [
     "LICENSE",
     "CHANGELOG.md",
@@ -15,7 +19,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/jdillon/vscode-beads"
+    "url": "https://github.com/connorbell133/vscode-beads"
+  },
+  "homepage": "https://github.com/connorbell133/vscode-beads#readme",
+  "bugs": {
+    "url": "https://github.com/connorbell133/vscode-beads/issues"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -26,8 +34,13 @@
   ],
   "keywords": [
     "beads",
+    "bd",
     "issues",
+    "issue tracker",
+    "kanban",
+    "dependency graph",
     "project management",
+    "agents",
     "dashboard"
   ],
   "activationEvents": [
@@ -129,7 +142,7 @@
       ]
     },
     "configuration": {
-      "title": "Beads",
+      "title": "Beads UI",
       "properties": {
         "beads.pathToBd": {
           "type": "string",

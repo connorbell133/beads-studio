@@ -123,6 +123,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.commands.executeCommand("beadsPanel.focus");
     }),
 
+    // Programmatic (not in the palette): the dashboard's stat strip routes
+    // here so a count click lands on the Issues list already filtered.
+    vscode.commands.registerCommand("beads.openIssuesWithPreset", (presetId: string) => {
+      vscode.commands.executeCommand("beadsPanel.focus");
+      beadsPanelProvider.applyPreset(presetId);
+    }),
+
     vscode.commands.registerCommand("beads.openGraph", (beadId?: string) => {
       graphPanel.show(beadId ?? selection.selected ?? undefined);
     }),

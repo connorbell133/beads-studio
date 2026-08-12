@@ -35,6 +35,11 @@ interface AppState {
   selectionOrigin: string | null;
   /** Bumped by beads.findInGraph; any change moves focus into the find field. */
   findRequests: number;
+  /** Set by the dashboard's stat strip; any bump re-applies the preset. */
+  issuesPresetId: string | null;
+  issuesPresetRequests: number;
+  /** When ids became ready, recorded by the dashboard provider across loads. */
+  pulseEvents: { id: string; at: number }[];
   summary: BeadsSummary | null;
   graph: BeadsGraphModel | null;
   loading: boolean;
@@ -51,6 +56,9 @@ const initialState: AppState = {
   selectedBeadId: null,
   selectionOrigin: null,
   findRequests: 0,
+  issuesPresetId: null,
+  issuesPresetRequests: 0,
+  pulseEvents: [],
   summary: null,
   graph: null,
   loading: true,
@@ -68,6 +76,16 @@ export function App(): React.ReactElement {
     switch (message.type) {
       case "setViewType":
         setState((prev) => ({ ...prev, viewType: message.viewType }));
+        break;
+      case "applyIssuesPreset":
+        setState((prev) => ({
+          ...prev,
+          issuesPresetId: message.presetId,
+          issuesPresetRequests: prev.issuesPresetRequests + 1,
+        }));
+        break;
+      case "setPulse":
+        setState((prev) => ({ ...prev, pulseEvents: message.events }));
         break;
       case "setProject":
         setState((prev) => ({ ...prev, project: message.project }));
@@ -157,6 +175,7 @@ export function App(): React.ReactElement {
           <DashboardView
             summary={state.summary}
             beads={visibleBeads}
+            pulseEvents={state.pulseEvents}
             graph={state.graph}
             selectedBeadId={state.selectedBeadId}
             loading={state.loading}
@@ -178,6 +197,10 @@ export function App(): React.ReactElement {
             onStopDolt={() => vscode.postMessage({ type: "stopDoltServer" })}
             onOpenDoltLog={() => vscode.postMessage({ type: "openDoltLog" })}
             onOpenProjectFolder={() => vscode.postMessage({ type: "openProjectFolder" })}
+            onOpenIssuesPreset={(presetId) =>
+              vscode.postMessage({ type: "openIssuesPreset", presetId })
+            }
+            onOpenGraph={() => vscode.postMessage({ type: "openGraph" })}
             onRetry={() =>
               vscode.postMessage({ type: "refresh" })
             }
@@ -192,6 +215,8 @@ export function App(): React.ReactElement {
             loading={state.loading}
             error={state.error}
             selectedBeadId={state.selectedBeadId}
+            presetId={state.issuesPresetId}
+            presetRequests={state.issuesPresetRequests}
             tooltipHoverDelay={state.settings.tooltipHoverDelay}
             onSelectBead={(beadId) =>
               vscode.postMessage({ type: "openBeadDetails", beadId })

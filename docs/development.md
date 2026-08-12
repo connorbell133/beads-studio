@@ -31,16 +31,16 @@ bun run package          # Create VSIX package
 
 **Option 2: Symlink for local testing**
 ```bash
-ln -s "$(pwd)" ~/.vscode/extensions/vscode-beads
+ln -s "$(pwd)" ~/.vscode/extensions/beads-ui
 # Reload VS Code: Cmd+Shift+P → "Developer: Reload Window"
 # Unlink when done
-rm ~/.vscode/extensions/vscode-beads
+rm ~/.vscode/extensions/beads-ui
 ```
 
 **Option 3: Install VSIX locally**
 ```bash
 bun run package
-code --install-extension vscode-beads-*.vsix
+code --install-extension beads-ui-*.vsix
 ```
 
 ## Releasing

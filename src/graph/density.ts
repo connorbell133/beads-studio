@@ -8,7 +8,7 @@
  * costs a full dagre pass and several hundred SVG subtrees to produce something
  * nobody can read.
  *
- * So above a node count the canvas declines, collapses to the epic rollup, and
+ * So above a node count the canvas declines, collapses to the epic lens, and
  * says so. Two rules make that honest rather than paternalistic:
  *
  *   It always says what it did and why, in the same place the user asked.
@@ -36,8 +36,8 @@ import { GraphLens } from "./lens";
  */
 export const DENSITY_NODE_LIMIT = 150;
 
-/** Where a collapse lands. The rollup is the only lens that is smaller by construction. */
-export const DENSITY_COLLAPSE_LENS: GraphLens = "epic-rollup";
+/** Where a collapse lands. One epic's subtree is the only view smaller by construction. */
+export const DENSITY_COLLAPSE_LENS: GraphLens = "epic";
 
 export interface DensityOptions {
   /** The lens the user asked for. */
@@ -48,6 +48,12 @@ export interface DensityOptions {
   override?: boolean;
   /** Defaults to `DENSITY_NODE_LIMIT`. */
   limit?: number;
+  /**
+   * Whether the collapse lens could draw anything - false for a project with
+   * no epics, where collapsing to the epic lens would trade a dense picture
+   * for an empty one. Defaults to true.
+   */
+  collapsible?: boolean;
 }
 
 export interface DensityDecision {
@@ -70,11 +76,11 @@ export interface DensityDecision {
  * Which lens to draw, given how big the requested one turned out to be.
  *
  * Three outcomes:
- *   under the limit          -> the requested lens, untouched
- *   over, collapse possible  -> the rollup, `autoCollapsed` with a reason
- *   over, already the rollup -> the rollup, `dense` but not collapsed; there is
- *                               nothing smaller to fall back to, and the view
- *                               should point at find or blast radius instead
+ *   under the limit            -> the requested lens, untouched
+ *   over, collapse possible    -> the epic lens, `autoCollapsed` with a reason
+ *   over, nothing to collapse  -> the requested lens, `dense` but not
+ *                                 collapsed; the view should point at find or
+ *                                 blast radius instead
  */
 export function resolveDensity(options: DensityOptions): DensityDecision {
   const limit = options.limit ?? DENSITY_NODE_LIMIT;
@@ -82,7 +88,8 @@ export function resolveDensity(options: DensityOptions): DensityDecision {
   const override = options.override ?? false;
 
   const dense = nodeCount > limit;
-  const collapsible = dense && requested !== DENSITY_COLLAPSE_LENS;
+  const collapsible =
+    dense && requested !== DENSITY_COLLAPSE_LENS && (options.collapsible ?? true);
 
   if (!collapsible) {
     return {

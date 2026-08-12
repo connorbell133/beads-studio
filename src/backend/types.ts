@@ -345,6 +345,8 @@ export type ExtensionToWebviewMessage =
   | { type: "setSelectedBeadId"; beadId: string | null; origin?: string }
   | { type: "focusGraphFind" }
   | { type: "toggleTreeMode" }
+  | { type: "applyIssuesPreset"; presetId: string }
+  | { type: "setPulse"; events: { id: string; at: number }[] }
   | { type: "setSummary"; summary: BeadsSummary | null }
   | { type: "setGraph"; graph: BeadsGraphModel }
   | { type: "setProjects"; projects: BeadsProject[] }
@@ -373,7 +375,9 @@ export type WebviewToExtensionMessage =
   | { type: "openBeadDetails"; beadId: string }
   | { type: "viewInGraph"; beadId: string }
   | { type: "copyBeadId"; beadId: string }
-  | { type: "openFile"; filePath: string; line?: number };
+  | { type: "openFile"; filePath: string; line?: number }
+  | { type: "openIssuesPreset"; presetId: string }
+  | { type: "openGraph" };
 
 // CLI command result
 export interface CommandResult<T = unknown> {

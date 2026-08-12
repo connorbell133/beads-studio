@@ -42,6 +42,6 @@ jobs:
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vscode-beads-${{ steps.version.outputs.version }}-${{ github.run_number }}
+          name: beads-ui-${{ steps.version.outputs.version }}-${{ github.run_number }}
           path: "*.vsix"
           retention-days: 7

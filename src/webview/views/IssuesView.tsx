@@ -1,14 +1,9 @@
 /**
  * IssuesView
  *
- * Main table/list view for issues using TanStack Table v8.
- * Features:
- * - Multi-column sorting (shift+click for secondary sort)
- * - Column resizing
- * - Column reordering (drag & drop)
- * - Faceted filtering with counts
- * - Column visibility toggle
- * - State persistence (sort order, column visibility, column order survive reloads)
+ * The Issues surface: a Linear-style list (LinearList) grouped by epic, plus
+ * the kanban board. TanStack Table stays underneath purely as the filter,
+ * search, and facet engine — presentation belongs to LinearList.
  */
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
@@ -16,17 +11,11 @@ import { createPortal } from "react-dom";
 import {
   useReactTable,
   getCoreRowModel,
-  getSortedRowModel,
   getFilteredRowModel,
   getFacetedRowModel,
   getFacetedUniqueValues,
-  getExpandedRowModel,
-  flexRender,
   createColumnHelper,
   ColumnFiltersState,
-  ColumnResizeMode,
-  ColumnSizingState,
-  Row,
 } from "@tanstack/react-table";
 import {
   Bead,
@@ -42,29 +31,26 @@ import {
   TYPE_COLORS,
   TYPE_SORT_ORDER,
   getTypeSortOrder,
-  sortLabels,
   vscode,
 } from "../types";
-import { buildTree, projectKeyFor, TreeBead, TreeRollup } from "../../graph/tree";
-import { GRAPHIC_TOKENS } from "../theme/tokens";
+import { projectKeyFor } from "../../graph/tree";
 import { StatusBadge } from "../common/StatusBadge";
 import { PriorityBadge } from "../common/PriorityBadge";
 import { TypeBadge } from "../common/TypeBadge";
-import { TypeIcon } from "../common/TypeIcon";
 import { LabelBadge } from "../common/LabelBadge";
-import { CriticalPath } from "../common/CriticalPath";
 import { FilterChip } from "../common/FilterChip";
-import { Table, Kanban, ListTree } from "lucide-react";
+import { Kanban, List } from "lucide-react";
 import { ErrorMessage } from "../common/ErrorMessage";
 import { Loading } from "../common/Loading";
 import { Dropdown, DropdownItem } from "../common/Dropdown";
-import { Timestamp, timestampSortingFn } from "../common/Timestamp";
 import { AutocompleteInput, AutocompleteOption } from "../common/AutocompleteInput";
 import { Markdown } from "../common/Markdown";
 import { getLabelColorStyle } from "../utils/label-colors";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { useColumnState } from "../hooks/useColumnState";
+import { FILTER_PRESETS, presetStatuses } from "../common/filter-presets";
 import { KanbanBoard } from "./KanbanBoard";
+import { LinearList } from "./LinearList";
 
 interface IssuesViewProps {
   beads: Bead[];
@@ -77,103 +63,25 @@ interface IssuesViewProps {
   loading: boolean;
   error: string | null;
   selectedBeadId: string | null;
+  /** External preset request (dashboard stat strip); a bump re-applies it. */
+  presetId?: string | null;
+  presetRequests?: number;
   tooltipHoverDelay: number; // 0 = disabled
   onSelectBead: (beadId: string) => void;
   onUpdateBead: (beadId: string, updates: Partial<Bead>) => void;
   onRetry: () => void;
 }
 
-type ViewMode = "table" | "tree" | "board";
+type ViewMode = "list" | "board";
 
-const VIEW_MODES: readonly ViewMode[] = ["table", "tree", "board"];
-
-/** Indent per tree level, in px. Depth reads as distance, not only as a line. */
-const TREE_INDENT = 14;
-
-/** Stable empty data so the tree tables do not rebuild their row model in list mode. */
-const EMPTY_ROWS: Bead[] = [];
-
-/** Reserved key for the orphans lane inside the persisted expanded record. */
-const ORPHAN_LANE_KEY = "__orphans__";
-
-/**
- * Collapsed points right, expanded points down - the tree convention VS Code's
- * own explorer uses. The shared ChevronIcon only does the dropdown flip.
- */
-function TreeChevron({ open }: { open: boolean }): React.ReactElement {
-  return (
-    <svg
-      className="tree-chevron"
-      width="10"
-      height="10"
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      style={{ transform: open ? "none" : "rotate(-90deg)" }}
-    >
-      <path fill="currentColor" d="M4.5 5.5L8 9l3.5-3.5L13 7l-5 5-5-5z" />
-    </svg>
-  );
-}
-
-/**
- * Child completion as a partly-filled bar plus its fraction.
- *
- * An unfinished epic is what a planner scans for, and a bar is read faster than
- * a parsed fraction - but the fraction stays visible so completion is never
- * carried by colour alone.
- */
-function RollupBar({ rollup }: { rollup: TreeRollup }): React.ReactElement {
-  return (
-    <span className="tree-rollup" title={`${rollup.label} children closed`}>
-      <span className="tree-rollup-track">
-        <span
-          className="tree-rollup-fill"
-          // The hue arrives as a custom property rather than as a background, so
-          // a forced-colors theme can still take the fill over.
-          style={
-            {
-              width: `${rollup.percent}%`,
-              "--tree-rollup-hue": GRAPHIC_TOKENS.success,
-            } as React.CSSProperties
-          }
-        />
-      </span>
-      <span className="tree-rollup-label">{rollup.label}</span>
-    </span>
-  );
-}
+const VIEW_MODES: readonly ViewMode[] = ["list", "board"];
 
 // Issue types sorted by TYPE_SORT_ORDER (epic first)
 const ISSUE_TYPES = Object.keys(TYPE_SORT_ORDER).sort(
   (a, b) => getTypeSortOrder(a) - getTypeSortOrder(b)
 );
 
-// Custom sorting function for type columns (epic first)
-const typeSortingFn = (rowA: { getValue: (id: string) => unknown }, rowB: { getValue: (id: string) => unknown }) => {
-  const a = getTypeSortOrder(rowA.getValue("type") as string | undefined);
-  const b = getTypeSortOrder(rowB.getValue("type") as string | undefined);
-  return a - b;
-};
-
-// Filter presets
-interface FilterPreset {
-  id: string;
-  label: string;
-  statuses: BeadStatus[];
-}
-
-const FILTER_PRESETS: FilterPreset[] = [
-  { id: "all", label: "All", statuses: [] },
-  { id: "not-closed", label: "Not Closed", statuses: ["open", "in_progress", "blocked", "deferred", "pinned", "hooked"] },
-  { id: "active", label: "Active", statuses: ["in_progress", "blocked", "hooked"] },
-  { id: "blocked", label: "Blocked", statuses: ["blocked"] },
-  { id: "closed", label: "Closed", statuses: ["closed"] },
-];
-
 const DEFAULT_PRESET_ID = "not-closed";
-
-const presetStatuses = (id: string): BeadStatus[] =>
-  FILTER_PRESETS.find((p) => p.id === id)?.statuses ?? [];
 
 const columnHelper = createColumnHelper<Bead>();
 
@@ -183,36 +91,23 @@ export function IssuesView({
   loading,
   error,
   selectedBeadId,
+  presetId = null,
+  presetRequests = 0,
   tooltipHoverDelay,
   onSelectBead,
   onUpdateBead,
   onRetry,
 }: IssuesViewProps): React.ReactElement {
-  // Persisted column state (sorting, visibility, order, view mode, expansion)
-  const defaultVisibility = {
-    labels: false,
-    assignee: false,
-    estimate: false,
-  };
   // The webview is not told the project id, so the bead-id prefix stands in for
-  // it. Tree expansion is a per-project fact and must not cross over.
+  // it. Group expansion is a per-project fact and must not cross over.
   const projectKey = useMemo(() => projectKeyFor(beads), [beads]);
   const {
-    sorting,
-    setSorting,
-    columnVisibility,
-    setColumnVisibility,
-    columnOrder,
-    setColumnOrder,
     viewMode: persistedViewMode,
     setViewMode,
     expanded,
     setExpanded,
-    resetVisibility,
   } = useColumnState({
-    defaultSorting: [{ id: "updatedAt", desc: true }],
-    defaultVisibility,
-    defaultViewMode: "table",
+    defaultViewMode: "list",
     viewModes: VIEW_MODES,
     projectKey,
   });
@@ -225,36 +120,33 @@ export function IssuesView({
     { id: "status", value: presetStatuses(DEFAULT_PRESET_ID) },
   ]);
   const [globalFilter, setGlobalFilter] = useState("");
-  const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
-  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
-  const [isResizing, setIsResizing] = useState(false);
-  // Shared across the list and tree tables so a column keeps its width when the
-  // mode is toggled.
-  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+
+  // Live width of the list, so right-side meta hiding tracks the panel as the
+  // user drags the sidebar. A callback ref survives the wrapper mounting and
+  // unmounting across view-mode switches.
+  const [tableWidth, setTableWidth] = useState<number | null>(null);
+  const widthObserverRef = useRef<ResizeObserver | null>(null);
+  const tableWrapperRef = useCallback((node: HTMLDivElement | null) => {
+    widthObserverRef.current?.disconnect();
+    widthObserverRef.current = null;
+    if (!node) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width !== undefined) setTableWidth(width);
+    });
+    observer.observe(node);
+    widthObserverRef.current = observer;
+  }, []);
 
   // UI state
-  // Tree mode needs the graph. Without one the persisted mode falls back rather
-  // than rendering an empty hierarchy.
-  const viewMode: ViewMode =
-    persistedViewMode === "tree" && !graph ? "table" : (persistedViewMode as ViewMode);
-  const isTree = viewMode === "tree";
-  // The lane's open state rides along in the expanded record so it persists per
-  // project with everything else. TanStack only reads keys that are row ids, so
-  // a reserved one is inert there.
-  const expandedRows = expanded === true ? {} : expanded;
-  const orphansOpen = !!globalFilter || expandedRows[ORPHAN_LANE_KEY] === true;
-  const toggleOrphans = () =>
-    setExpanded((prev) => {
-      const rows = prev === true ? {} : prev;
-      return { ...rows, [ORPHAN_LANE_KEY]: !rows[ORPHAN_LANE_KEY] };
-    });
+  const viewMode = persistedViewMode as ViewMode;
   const [activePreset, setActivePreset] = useState<string>(DEFAULT_PRESET_ID);
-  const [filterBarOpen, setFilterBarOpen] = useState(true);
+  // Closed until asked for: the preset dropdown lives in the toolbar, so the
+  // second row only exists when there are custom chips to show.
+  const [filterBarOpen, setFilterBarOpen] = useState(false);
   const [filterMenuOpen, setFilterMenuOpen] = useState<string | null>(null);
-  const [columnMenuOpen, setColumnMenuOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const filterMenuRef = useRef<HTMLDivElement>(null);
-  const columnMenuRef = useRef<HTMLTableCellElement>(null);
 
   // Tooltip state
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
@@ -267,7 +159,7 @@ export function IssuesView({
     return beads.find((b) => b.id === hoveredRowId);
   }, [hoveredRowId, beads]);
 
-  const handleRowMouseEnter = useCallback((e: React.MouseEvent<HTMLTableRowElement>, beadId: string) => {
+  const handleRowMouseEnter = useCallback((e: React.MouseEvent<HTMLElement>, beadId: string) => {
     // Skip if tooltips are disabled
     if (tooltipHoverDelay === 0) return;
 
@@ -327,135 +219,27 @@ export function IssuesView({
 
   // Click outside to close menus
   useClickOutside(filterMenuRef, () => setFilterMenuOpen(null), !!filterMenuOpen);
-  useClickOutside(columnMenuRef, () => setColumnMenuOpen(false), columnMenuOpen);
 
-  // Column definitions
+  // Column definitions. Nothing here renders — LinearList owns presentation —
+  // but each filterable field needs a column so filterFns and facet counts
+  // keep one source of truth.
   const columns = useMemo(
     () => [
       columnHelper.accessor("type", {
-        id: "icon",
-        header: "",
-        size: 28,
-        minSize: 28,
-        maxSize: 28,
-        enableResizing: false,
-        cell: (info) =>
-          info.getValue() ? (
-            <TypeIcon type={info.getValue() as BeadType} size={16} />
-          ) : null,
-        sortingFn: typeSortingFn,
-      }),
-      columnHelper.accessor("type", {
-        header: "Type",
-        size: 70,
-        minSize: 30,
-        cell: (info) =>
-          info.getValue() ? (
-            <TypeBadge type={info.getValue() as BeadType} size="small" />
-          ) : null,
-        sortingFn: typeSortingFn,
+        id: "type",
         filterFn: (row, columnId, filterValue: string[]) => {
           if (!filterValue || filterValue.length === 0) return true;
           const val = row.getValue(columnId) as string | undefined;
           return val !== undefined && filterValue.includes(val);
         },
       }),
-      columnHelper.accessor("title", {
-        header: "Title",
-        size: 200,
-        minSize: 100,
-        cell: (info) => {
-          const bead = info.row.original as TreeBead<Bead>;
-          const label = (
-            <>
-              <span
-                className={`bead-id ${copiedId === bead.id ? "copied" : ""}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCopyId(bead.id);
-                  onSelectBead(bead.id);
-                }}
-                title={copiedId === bead.id ? "Copied!" : "Click to copy"}
-              >
-                {bead.id}
-              </span>
-              <span className="bead-title">{info.getValue()}</span>
-            </>
-          );
-
-          // List mode rows carry none of these, so they render exactly the
-          // markup they always did - no wrapper, no reflow.
-          const depth = info.row.depth;
-          const canExpand = info.row.getCanExpand();
-          if (!canExpand && depth === 0 && !bead.treeRollup && !bead.treeContext) {
-            return label;
-          }
-
-          const isExpanded = info.row.getIsExpanded();
-          return (
-            <span
-              className={`tree-cell${bead.treeContext ? " tree-context" : ""}`}
-              style={{ paddingLeft: depth * TREE_INDENT }}
-            >
-              {depth > 0 && (
-                <span
-                  className="tree-rail"
-                  aria-hidden="true"
-                  style={{ left: (depth - 1) * TREE_INDENT + 6 }}
-                />
-              )}
-              {canExpand ? (
-                <button
-                  type="button"
-                  className="tree-toggle"
-                  aria-expanded={isExpanded}
-                  aria-label={`${isExpanded ? "Collapse" : "Expand"} ${bead.id}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    info.row.toggleExpanded();
-                  }}
-                >
-                  <TreeChevron open={isExpanded} />
-                </button>
-              ) : (
-                <span className="tree-toggle-spacer" aria-hidden="true" />
-              )}
-              <span className="tree-cell-label">{label}</span>
-              {bead.treeCycle && (
-                <span className="tree-cycle-flag" title="This bead's parent chain loops back to it">
-                  parent loop
-                </span>
-              )}
-              {bead.treeRollup && <RollupBar rollup={bead.treeRollup} />}
-              {bead.treeCriticalPath !== undefined && (
-                <CriticalPath
-                  depth={bead.treeCriticalPath}
-                  chain={bead.treeCriticalChain}
-                  onSelectBead={onSelectBead}
-                />
-              )}
-            </span>
-          );
-        },
-      }),
       columnHelper.accessor("status", {
-        header: "Status",
-        size: 80,
-        minSize: 30,
-        cell: (info) => <StatusBadge status={info.getValue()} size="small" />,
         filterFn: (row, columnId, filterValue: BeadStatus[]) => {
           if (!filterValue || filterValue.length === 0) return true;
           return filterValue.includes(row.getValue(columnId));
         },
       }),
       columnHelper.accessor("priority", {
-        header: "Priority",
-        size: 70,
-        minSize: 30,
-        cell: (info) =>
-          info.getValue() !== undefined ? (
-            <PriorityBadge priority={info.getValue()!} size="small" />
-          ) : null,
         filterFn: (row, columnId, filterValue: BeadPriority[]) => {
           if (!filterValue || filterValue.length === 0) return true;
           const val = row.getValue(columnId) as BeadPriority | undefined;
@@ -463,17 +247,6 @@ export function IssuesView({
         },
       }),
       columnHelper.accessor("labels", {
-        header: "Labels",
-        size: 100,
-        minSize: 30,
-        enableSorting: false,
-        cell: (info) => (
-          <>
-            {sortLabels(info.getValue()).map((label) => (
-              <LabelBadge key={label} label={label} />
-            ))}
-          </>
-        ),
         filterFn: (row, columnId, filterValue: string[]) => {
           if (!filterValue || filterValue.length === 0) return true;
           const labels = row.getValue(columnId) as string[] | undefined;
@@ -486,10 +259,6 @@ export function IssuesView({
         },
       }),
       columnHelper.accessor("assignee", {
-        header: "Assignee",
-        size: 80,
-        minSize: 30,
-        cell: (info) => info.getValue() || "-",
         filterFn: (row, columnId, filterValue: string[]) => {
           if (!filterValue || filterValue.length === 0) return true;
           const val = row.getValue(columnId) as string | undefined;
@@ -500,48 +269,19 @@ export function IssuesView({
           return val !== undefined && filterValue.includes(val);
         },
       }),
-      columnHelper.accessor("estimatedMinutes", {
-        id: "estimate",
-        header: "Estimate",
-        size: 70,
-        minSize: 30,
-        cell: (info) => (info.getValue() ? `${info.getValue()}m` : "-"),
-      }),
-      columnHelper.accessor("updatedAt", {
-        header: "Updated",
-        size: 80,
-        minSize: 30,
-        cell: (info) => <Timestamp value={info.getValue()} format="auto" />,
-        sortingFn: timestampSortingFn,
-      }),
-      columnHelper.accessor("createdAt", {
-        header: "Created",
-        size: 80,
-        minSize: 30,
-        cell: (info) => <Timestamp value={info.getValue()} format="auto" />,
-        sortingFn: timestampSortingFn,
-      }),
     ],
-    [copiedId]
+    []
   );
 
   const table = useReactTable({
     data: beads,
     columns,
     state: {
-      sorting,
       columnFilters,
       globalFilter,
-      columnVisibility,
-      columnOrder,
-      columnSizing,
     },
-    onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
-    onColumnVisibilityChange: setColumnVisibility,
-    onColumnOrderChange: setColumnOrder,
-    onColumnSizingChange: setColumnSizing,
     globalFilterFn: (row, _columnId, filterValue: string) => {
       const search = filterValue.toLowerCase();
       const bead = row.original;
@@ -553,58 +293,16 @@ export function IssuesView({
       );
     },
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
-    columnResizeMode: "onChange" as ColumnResizeMode,
-    enableColumnResizing: true,
   });
 
-  // The flat table stays the one place filtering, faceting and counting happen.
-  // Tree mode reads its match set from it rather than re-deciding the predicate,
-  // so the two modes can never disagree about what a filter means.
+  // The one place filtering, faceting and counting happen. LinearList reads
+  // its match set from here rather than re-deciding the predicate, so the
+  // list and the counts can never disagree about what a filter means.
   const filteredRows = table.getFilteredRowModel().rows;
-  const tree = useMemo(() => {
-    if (!isTree) return null;
-    return buildTree(beads, graph, { matched: filteredRows.map((row) => row.original.id) });
-  }, [isTree, beads, graph, filteredRows]);
-
-  const treeShared = {
-    columns,
-    state: { sorting, columnVisibility, columnOrder, columnSizing },
-    onSortingChange: setSorting,
-    onColumnVisibilityChange: setColumnVisibility,
-    onColumnOrderChange: setColumnOrder,
-    onColumnSizingChange: setColumnSizing,
-    // No filtering here: the rows arrive already filtered, with context parents
-    // deliberately kept. Filtering again would drop exactly those.
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    columnResizeMode: "onChange" as ColumnResizeMode,
-    enableColumnResizing: true,
-  };
-
-  const treeTable = useReactTable<Bead>({
-    ...treeShared,
-    data: tree?.roots ?? EMPTY_ROWS,
-    // A search opens the tree: a hit buried under a collapsed epic reads as no
-    // hit at all. Clearing the search restores what the user had open.
-    state: { ...treeShared.state, expanded: globalFilter ? true : expanded },
-    onExpandedChange: setExpanded,
-    getSubRows: (row) => (row as TreeBead<Bead>).subRows,
-    getExpandedRowModel: getExpandedRowModel(),
-  });
-
-  // The orphans lane is its own table so it sorts independently and cannot be
-  // mixed back into the hierarchy by a sort. Both render into one <table>, so
-  // the columns stay aligned.
-  const orphanTable = useReactTable<Bead>({
-    ...treeShared,
-    data: tree?.orphans ?? EMPTY_ROWS,
-  });
-
-  const activeTable = isTree ? treeTable : table;
+  const matched = useMemo(() => filteredRows.map((row) => row.original.id), [filteredRows]);
 
   const handleCopyId = useCallback((beadId: string) => {
     vscode.postMessage({ type: "copyBeadId", beadId });
@@ -619,6 +317,15 @@ export function IssuesView({
   const assigneeFilter = (columnFilters.find((f) => f.id === "assignee")?.value || []) as string[];
   const labelFilter = (columnFilters.find((f) => f.id === "labels")?.value || []) as string[];
   const hasActiveFilters = statusFilter.length > 0 || priorityFilter.length > 0 || typeFilter.length > 0 || assigneeFilter.length > 0 || labelFilter.length > 0;
+  // Filters beyond the preset — the chips the user placed themselves. The
+  // preset already reads from its dropdown; re-stating it as six chips cost
+  // two rows of panel.
+  const hasCustomFilters =
+    (activePreset === "" && statusFilter.length > 0) ||
+    priorityFilter.length > 0 ||
+    typeFilter.length > 0 ||
+    assigneeFilter.length > 0 ||
+    labelFilter.length > 0;
 
   const applyPreset = (presetId: string) => {
     const preset = FILTER_PRESETS.find((p) => p.id === presetId);
@@ -631,6 +338,12 @@ export function IssuesView({
       setActivePreset(presetId);
     }
   };
+
+  // An external request (the dashboard's stat strip) applies a preset the same
+  // way a toolbar click would; the request counter makes repeats re-apply.
+  useEffect(() => {
+    if (presetRequests > 0 && presetId) applyPreset(presetId);
+  }, [presetRequests]);
 
   const addStatusFilter = (status: BeadStatus) => {
     if (!statusFilter.includes(status)) {
@@ -750,36 +463,6 @@ export function IssuesView({
 
   const filteredCount = filteredRows.length;
   const totalCount = beads.length;
-  const columnSpan = activeTable.getVisibleLeafColumns().length + 1;
-
-  // One row renderer for the list, the tree, and the orphans lane, so the three
-  // cannot drift in selection, hover, or cell markup.
-  const renderRow = (row: Row<Bead>): React.ReactElement => {
-    const bead = row.original as TreeBead<Bead>;
-    return (
-      <tr
-        key={row.id}
-        onClick={() => onSelectBead(bead.id)}
-        className={`bead-row ${bead.id === selectedBeadId ? "selected" : ""}${
-          isTree && bead.treeContext ? " tree-context-row" : ""
-        }`}
-        aria-level={isTree ? row.depth + 1 : undefined}
-        onMouseEnter={(e) => handleRowMouseEnter(e, bead.id)}
-        onMouseLeave={handleRowMouseLeave}
-      >
-        {row.getVisibleCells().map((cell) => (
-          <td
-            key={cell.id}
-            className={`${cell.column.id}-cell`}
-            style={{ width: cell.column.getSize() }}
-          >
-            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-          </td>
-        ))}
-        <td className="row-spacer" />
-      </tr>
-    );
-  };
 
   // Get faceted counts for filters (counts based on OTHER active filters, not this column)
   const statusFacets = table.getColumn("status")?.getFacetedUniqueValues() ?? new Map();
@@ -787,9 +470,8 @@ export function IssuesView({
   const typeFacets = table.getColumn("type")?.getFacetedUniqueValues() ?? new Map();
   const assigneeFacets = table.getColumn("assignee")?.getFacetedUniqueValues() ?? new Map();
 
-  // Unfiltered counts per status (for kanban empty state messaging).
-  // Tallies every status present, including custom ones, so board columns for
-  // non-built-in statuses still get an accurate "n/N" count.
+  // Unfiltered counts per status (for kanban empty-state messaging). Tallies
+  // every status present, including custom ones.
   const unfilteredStatusCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const bead of beads) {
@@ -887,8 +569,25 @@ export function IssuesView({
             </button>
           )}
         </div>
+        <Dropdown
+          trigger={FILTER_PRESETS.find((p) => p.id === activePreset)?.label || "Custom"}
+          className="preset-dropdown"
+          triggerClassName="preset-dropdown-btn"
+          menuClassName="preset-dropdown-menu"
+        >
+          {FILTER_PRESETS.map((preset) => (
+            <DropdownItem
+              key={preset.id}
+              className="preset-option"
+              active={activePreset === preset.id}
+              onClick={() => applyPreset(preset.id)}
+            >
+              {preset.label}
+            </DropdownItem>
+          ))}
+        </Dropdown>
         <button
-          className={`filter-toggle ${filterBarOpen || hasActiveFilters ? "active" : ""}`}
+          className={`filter-toggle ${filterBarOpen || hasCustomFilters ? "active" : ""}`}
           onClick={() => setFilterBarOpen(!filterBarOpen)}
           title="Filter"
         >
@@ -898,19 +597,11 @@ export function IssuesView({
         </button>
         <div className="view-toggle">
           <button
-            className={viewMode === "table" ? "active" : ""}
-            onClick={() => setViewMode("table")}
-            title="Table view"
+            className={viewMode === "list" ? "active" : ""}
+            onClick={() => setViewMode("list")}
+            title="List view"
           >
-            <Table size={14} />
-          </button>
-          <button
-            className={isTree ? "active" : ""}
-            onClick={() => setViewMode("tree")}
-            disabled={!graph}
-            title={graph ? "Tree view" : "Tree view needs the dependency graph"}
-          >
-            <ListTree size={14} />
+            <List size={14} />
           </button>
           <button
             className={viewMode === "board" ? "active" : ""}
@@ -922,36 +613,19 @@ export function IssuesView({
         </div>
       </div>
 
-      {/* Row 2: Filter bar */}
-      {(filterBarOpen || hasActiveFilters) && (
+      {/* Row 2: custom filter chips. The preset speaks through its dropdown in
+          the toolbar; chips here are only what the user added beyond it. */}
+      {(filterBarOpen || hasCustomFilters) && (
         <div className="filter-bar">
-          <Dropdown
-            trigger={FILTER_PRESETS.find((p) => p.id === activePreset)?.label || "Custom"}
-            className="preset-dropdown"
-            triggerClassName="preset-dropdown-btn"
-            menuClassName="preset-dropdown-menu"
-          >
-            {FILTER_PRESETS.map((preset) => (
-              <DropdownItem
-                key={preset.id}
-                className="preset-option"
-                active={activePreset === preset.id}
-                onClick={() => applyPreset(preset.id)}
-              >
-                {preset.label}
-              </DropdownItem>
+          {activePreset === "" &&
+            statusFilter.map((status) => (
+              <FilterChip
+                key={`status-${status}`}
+                label={STATUS_LABELS[status] ?? status}
+                accentColor={STATUS_COLORS[status] ?? UNKNOWN_STATUS_COLOR}
+                onRemove={() => removeStatusFilter(status)}
+              />
             ))}
-          </Dropdown>
-
-          {/* Active filter chips */}
-          {statusFilter.map((status) => (
-            <FilterChip
-              key={`status-${status}`}
-              label={STATUS_LABELS[status] ?? status}
-              accentColor={STATUS_COLORS[status] ?? UNKNOWN_STATUS_COLOR}
-              onRemove={() => removeStatusFilter(status)}
-            />
-          ))}
           {priorityFilter.map((priority) => (
             <FilterChip
               key={`priority-${priority}`}
@@ -1104,7 +778,7 @@ export function IssuesView({
             )}
           </div>
 
-          {hasActiveFilters && (
+          {hasCustomFilters && (
             <button className="filter-reset" onClick={clearAllFilters}>
               Clear
             </button>
@@ -1120,175 +794,31 @@ export function IssuesView({
         />
       )}
 
-      {/* Table - flat list, or the graph-derived tree */}
-      {!error && viewMode !== "board" && (
-        <div className="beads-table-wrapper">
+      {/* The Linear-style list, grouped by epic */}
+      {!error && viewMode === "list" && (
+        <div className="beads-table-wrapper" ref={tableWrapperRef}>
           {loading && (
             <div className="issues-loading-state">
               <Loading />
             </div>
           )}
-          <div className={`beads-table-container ${activeTable.getState().columnSizingInfo.isResizingColumn ? "resizing" : ""}`}>
-            <table
-              className="beads-table"
-              style={{ minWidth: activeTable.getCenterTotalSize() }}
-              onContextMenu={(e) => e.preventDefault()}
-            >
-              <thead>
-                {activeTable.getHeaderGroups().map((headerGroup) => (
-                  <tr key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <th
-                        key={header.id}
-                        style={{ width: header.getSize() }}
-                        className={`${header.column.getCanSort() ? "sortable" : ""} ${draggedColumn === header.id ? "dragging" : ""} ${dragOverColumn === header.id && draggedColumn !== header.id ? "drag-over" : ""}`}
-                        onClick={header.column.getToggleSortingHandler()}
-                        draggable={!isResizing}
-                        onDragStart={(e) => {
-                          if (isResizing) {
-                            e.preventDefault();
-                            return;
-                          }
-                          setDraggedColumn(header.id);
-                          e.dataTransfer.effectAllowed = "move";
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = "move";
-                          if (draggedColumn && draggedColumn !== header.id) {
-                            setDragOverColumn(header.id);
-                          }
-                        }}
-                        onDragLeave={() => {
-                          setDragOverColumn(null);
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          if (draggedColumn && draggedColumn !== header.id) {
-                            const currentOrder = activeTable.getAllLeafColumns().map((c) => c.id);
-                            const dragIdx = currentOrder.indexOf(draggedColumn);
-                            const dropIdx = currentOrder.indexOf(header.id);
-                            const newOrder = [...currentOrder];
-                            newOrder.splice(dragIdx, 1);
-                            newOrder.splice(dropIdx, 0, draggedColumn);
-                            setColumnOrder(newOrder);
-                          }
-                          setDraggedColumn(null);
-                          setDragOverColumn(null);
-                        }}
-                        onDragEnd={() => {
-                          setDraggedColumn(null);
-                          setDragOverColumn(null);
-                        }}
-                      >
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                        {header.column.getIsSorted() && (
-                          <span className="sort-indicator">
-                            {header.column.getIsSorted() === "asc" ? "▲" : "▼"}
-                          </span>
-                        )}
-                        <span
-                          className="resize-handle"
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            setIsResizing(true);
-                            const resizeHandler = header.getResizeHandler();
-                            resizeHandler(e);
-                            // Clear resizing state on mouseup
-                            const handleMouseUp = () => {
-                              setIsResizing(false);
-                              document.removeEventListener("mouseup", handleMouseUp);
-                            };
-                            document.addEventListener("mouseup", handleMouseUp);
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            setIsResizing(true);
-                            const resizeHandler = header.getResizeHandler();
-                            resizeHandler(e);
-                            const handleTouchEnd = () => {
-                              setIsResizing(false);
-                              document.removeEventListener("touchend", handleTouchEnd);
-                            };
-                            document.addEventListener("touchend", handleTouchEnd);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </th>
-                    ))}
-                    <th className="col-menu-th" ref={columnMenuRef}>
-                      <button
-                        className="col-menu-btn"
-                        onClick={() => setColumnMenuOpen(!columnMenuOpen)}
-                        title="Show/hide columns"
-                      >
-                        ⋮
-                      </button>
-                      {columnMenuOpen && (
-                        <div className="col-menu">
-                          {activeTable.getAllLeafColumns().map((column) => (
-                            <label key={column.id}>
-                              <input
-                                type="checkbox"
-                                checked={column.getIsVisible()}
-                                onChange={column.getToggleVisibilityHandler()}
-                              />
-                              {typeof column.columnDef.header === "string"
-                                ? column.columnDef.header
-                                : column.id}
-                            </label>
-                          ))}
-                          <hr className="col-menu-divider" />
-                          <button
-                            className="col-menu-reset"
-                            onClick={() => {
-                              resetVisibility();
-                              setColumnMenuOpen(false);
-                            }}
-                          >
-                            Reset to defaults
-                          </button>
-                        </div>
-                      )}
-                    </th>
-                  </tr>
-                ))}
-              </thead>
-              <tbody>
-                {activeTable.getRowModel().rows.length === 0 && (!tree || tree.orphans.length === 0) ? (
-                  <tr>
-                    <td colSpan={columnSpan} className="empty-row">
-                      {loading ? "Loading..." : "No issues matching filter"}
-                    </td>
-                  </tr>
-                ) : (
-                  activeTable.getRowModel().rows.map(renderRow)
-                )}
-              </tbody>
-              {/* Orphans lane: parentless, childless work. Empty on a healthy
-                  project; when it is not, its size is the finding. */}
-              {isTree && tree && tree.orphans.length > 0 && (
-                <tbody className="tree-lane">
-                  <tr className="tree-lane-header">
-                    <td colSpan={columnSpan}>
-                      <button
-                        type="button"
-                        className="tree-lane-toggle"
-                        aria-expanded={orphansOpen}
-                        onClick={toggleOrphans}
-                      >
-                        <TreeChevron open={orphansOpen} />
-                        <span className="tree-lane-title">Orphans</span>
-                        <span className="tree-lane-count">{tree.orphans.length}</span>
-                        <span className="tree-lane-hint">no parent epic</span>
-                      </button>
-                    </td>
-                  </tr>
-                  {orphansOpen && orphanTable.getRowModel().rows.map(renderRow)}
-                </tbody>
-              )}
-            </table>
-          </div>
+          <LinearList
+            beads={beads}
+            graph={graph ?? null}
+            matched={matched}
+            width={tableWidth}
+            selectedBeadId={selectedBeadId}
+            copiedId={copiedId}
+            expanded={expanded}
+            setExpanded={setExpanded}
+            forceOpen={!!globalFilter}
+            emptyText={loading ? "Loading..." : "No issues matching filter"}
+            onSelectBead={onSelectBead}
+            onUpdateBead={onUpdateBead}
+            onCopyId={handleCopyId}
+            onRowMouseEnter={handleRowMouseEnter}
+            onRowMouseLeave={handleRowMouseLeave}
+          />
           {/* Filtered count overlay */}
           {(hasActiveFilters || globalFilter) && filteredCount !== totalCount && (
             <div className="filter-count-overlay">

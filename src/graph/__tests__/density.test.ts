@@ -27,11 +27,11 @@ describe("resolveDensity", () => {
     expect(decision.autoCollapsed).toBe(false);
   });
 
-  it("collapses to the rollup above the threshold, with a reason", () => {
+  it("collapses to the epic lens above the threshold, with a reason", () => {
     const decision = resolveDensity({ requested: "full", nodeCount: DENSITY_NODE_LIMIT + 1 });
 
     expect(decision.lens).toBe(DENSITY_COLLAPSE_LENS);
-    expect(decision.lens).toBe("epic-rollup");
+    expect(decision.lens).toBe("epic");
     expect(decision.dense).toBe(true);
     expect(decision.autoCollapsed).toBe(true);
     expect(decision.reason).toBe("node-count");
@@ -41,8 +41,18 @@ describe("resolveDensity", () => {
   it("collapses the blast radius too when it comes back huge", () => {
     const decision = resolveDensity({ requested: "blast-radius", nodeCount: 500 });
 
-    expect(decision.lens).toBe("epic-rollup");
+    expect(decision.lens).toBe("epic");
     expect(decision.autoCollapsed).toBe(true);
+  });
+
+  it("never collapses toward a lens that could not draw anything", () => {
+    // A 500-bead project with no epics: the epic lens is not an alternative.
+    const decision = resolveDensity({ requested: "full", nodeCount: 500, collapsible: false });
+
+    expect(decision.lens).toBe("full");
+    expect(decision.dense).toBe(true);
+    expect(decision.autoCollapsed).toBe(false);
+    expect(decision.reason).toBeUndefined();
   });
 
   it("lets the override defeat the threshold", () => {
@@ -62,10 +72,10 @@ describe("resolveDensity", () => {
     expect(decision.lens).toBe("full");
   });
 
-  it("has nothing to collapse to when the rollup itself is over the limit", () => {
-    const decision = resolveDensity({ requested: "epic-rollup", nodeCount: 480 });
+  it("has nothing to collapse to when the epic lens itself is over the limit", () => {
+    const decision = resolveDensity({ requested: "epic", nodeCount: 480 });
 
-    expect(decision.lens).toBe("epic-rollup");
+    expect(decision.lens).toBe("epic");
     expect(decision.dense).toBe(true);
     expect(decision.autoCollapsed).toBe(false);
     expect(decision.reason).toBeUndefined();

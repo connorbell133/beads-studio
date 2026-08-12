@@ -6,7 +6,7 @@
  */
 
 import React from "react";
-import { TYPE_COLORS, UNKNOWN_TYPE_COLOR } from "../types";
+import { TYPE_COLORS, TYPE_LABELS, UNKNOWN_TYPE_COLOR } from "../types";
 import { icons } from "../icons";
 
 interface TypeIconProps {
@@ -33,10 +33,12 @@ export function TypeIcon({
     .replace(/<svg/, `<svg width="${size}" height="${size}" fill="${color}" class="type-icon"`)
     .replace(/<!--[\s\S]*?-->/g, ""); // Remove comments
 
+  // Where the icon stands alone (no badge beside it), the hover title is how
+  // the type gets named — use the human label, not the raw slug.
   return (
     <span
       className="type-icon-wrapper"
-      title={type}
+      title={TYPE_LABELS[type as keyof typeof TYPE_LABELS] || type}
       dangerouslySetInnerHTML={{ __html: coloredSvg }}
     />
   );

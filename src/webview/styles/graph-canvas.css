@@ -209,9 +209,9 @@
 
 .graph-canvas-node {
   cursor: pointer;
-  /* Motion 2: switching lens interpolates each node to its new position, so the
-     rollup visibly expands into the full graph instead of becoming a different
-     picture. */
+  /* Motion 2: switching lens interpolates each node to its new position, so an
+     epic's subtree visibly rearranges into the full graph instead of becoming a
+     different picture. */
   transition: transform var(--transition-normal, 250ms) ease-out;
 }
 
@@ -237,6 +237,21 @@
 .graph-canvas-node.focused .graph-canvas-node-body {
   stroke-width: 2;
   stroke-opacity: 1;
+}
+
+/* The epic-lens anchor: the finish line the subtree converges into, not work
+   to pick up. The accent hue comes from the node's fill attribute; here the
+   outline gets its weight and the flag its emphasis, so the goal reads as a
+   different kind of object and never as colour alone. */
+.graph-canvas-node.goal .graph-canvas-node-body {
+  stroke-width: 2;
+  stroke-opacity: 1;
+}
+
+.graph-canvas-node.goal .graph-canvas-node-flag {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .graph-canvas-node.in-cycle .graph-canvas-node-body {

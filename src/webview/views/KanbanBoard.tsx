@@ -146,11 +146,7 @@ export function KanbanBoard({ beads, selectedBeadId, onSelectBead, onUpdateBead,
               onClick={() => toggleColumn(status)}
             >
               <span className="kanban-column-title">{STATUS_LABELS[status] ?? status}</span>
-              <span className="kanban-column-count">
-                {hasActiveFilters && unfilteredCounts && unfilteredCounts[status] !== items.length
-                  ? `${items.length}/${unfilteredCounts[status]}`
-                  : items.length}
-              </span>
+              <span className="kanban-column-count">{items.length}</span>
             </div>
             {!isCollapsed && (
               <div className="kanban-column-body">

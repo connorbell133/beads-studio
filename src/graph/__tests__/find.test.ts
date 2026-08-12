@@ -16,15 +16,13 @@ import {
 } from "../find";
 import { LensEdge } from "../lens";
 
-const target = (id: string, label: string, members?: string[]): FindTarget =>
-  members ? { id, label, members } : { id, label };
+const target = (id: string, label: string): FindTarget => ({ id, label });
 
 /** `edge(a, b)` reads "a blocks b". */
 const edge = (blocker: string, blocked: string): LensEdge => ({
   blocker,
   blocked,
-  weight: 1,
-  rolled: false,
+  kind: "blocks",
 });
 
 /** Twenty nodes, two of which mention authentication. */
@@ -77,15 +75,6 @@ describe("findMatches", () => {
     const targets = [target("vsbeads-4f2", "A bead"), target("vsbeads-9aa", "Another")];
 
     expect(findMatches(targets, "4f2").matches).toEqual(["vsbeads-4f2"]);
-  });
-
-  it("lights a rolled node when one of its members matches", () => {
-    const targets = [
-      target("epic-1", "Payments", ["epic-1", "bd-a1b2", "bd-c3d4"]),
-      target("epic-2", "Docs", ["epic-2", "bd-ffff"]),
-    ];
-
-    expect(findMatches(targets, "a1b2").matches).toEqual(["epic-1"]);
   });
 
   it("goes inactive on an empty or whitespace query, dimming nothing", () => {

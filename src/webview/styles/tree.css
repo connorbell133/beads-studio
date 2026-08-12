@@ -97,36 +97,30 @@
 }
 
 /* ---- Child completion ---------------------------------------------------
-   A bar for speed of scanning, the fraction for everything the bar cannot say.
-   The fraction is the accessible label, so progress is never colour alone. */
+   A ring for speed of scanning; the "3/11" fraction lives in the tooltip and
+   the aria-label, so the row's width goes to the title. */
 .tree-rollup {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs);
 }
 
-.tree-rollup-track {
+.tree-rollup-ring {
   display: block;
-  width: 36px;
-  height: 4px;
-  border-radius: 2px;
-  background-color: var(--vscode-panel-border);
-  overflow: hidden;
 }
 
-.tree-rollup-fill {
-  display: block;
-  height: 100%;
-  border-radius: 2px;
-  background-color: var(--tree-rollup-hue, var(--vscode-charts-green));
-  transition: width var(--transition-normal);
+.tree-rollup-ring-track {
+  fill: none;
+  stroke: var(--vscode-panel-border);
+  stroke-width: 2.5;
 }
 
-.tree-rollup-label {
-  font-size: 0.85em;
-  font-variant-numeric: tabular-nums;
-  color: var(--vscode-descriptionForeground);
+.tree-rollup-ring-fill {
+  fill: none;
+  stroke: var(--tree-rollup-hue, var(--vscode-charts-green));
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--transition-normal);
 }
 
 /* ---- Orphans lane -------------------------------------------------------
@@ -177,22 +171,22 @@
 
 @media (prefers-reduced-motion: reduce) {
   .tree-chevron,
-  .tree-rollup-fill {
+  .tree-rollup-ring-fill {
     transition: none;
   }
 }
 
-/* Decorative fills have no meaning the system palette needs to keep; the
-   indent, the fraction and the count carry everything. */
+/* The ring is the only visible carrier now, so it must survive the system
+   palette: track in the muted tone, progress in the text tone. The numbers
+   stay reachable through the tooltip and aria-label. */
 @media (forced-colors: active) {
-  .tree-rollup-track,
-  .tree-rollup-fill {
+  .tree-rollup-ring-track {
     forced-color-adjust: none;
-    background-color: Canvas;
-    border: 1px solid CanvasText;
+    stroke: GrayText;
   }
 
-  .tree-rollup-fill {
-    background-color: CanvasText;
+  .tree-rollup-ring-fill {
+    forced-color-adjust: none;
+    stroke: CanvasText;
   }
 }
