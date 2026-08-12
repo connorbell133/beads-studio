@@ -13,6 +13,32 @@
  * It opens on the epic rollup - a five-hundred-node hairball on open is a
  * decision-paralysis surface with no entry point.
  *
+ * Past that opening, four affordances keep it usable at the sizes real projects
+ * reach, each answering a question the user has at a specific scale:
+ *
+ *   Where am I?          Fit-to-selection. One action frames the selected bead
+ *                        and what it links to. Not a minimap: a minimap is a
+ *                        second rendering to keep legible for the same job.
+ *   Where is bd-a1b2?    Find, filtering as you type over id and title, with
+ *                        matches marked in place and non-matches dimmed. Never
+ *                        removed - removing re-runs dagre and moves everything.
+ *   Why is this a
+ *   hairball?            A density threshold (src/graph/density.ts). Above a
+ *                        node count the canvas collapses to the rollup and says
+ *                        so, with an explicit override.
+ *   What connects to
+ *   what?                Hover, or the keyboard cursor, dims everything outside
+ *                        that bead's blocker and blocked chains.
+ *
+ * Keyboard: the canvas is ONE tab stop with an internal cursor, not a tree of
+ * tab stops. Arrows follow blocking edges rather than the DOM, which is the
+ * only traversal that means anything in a DAG, and each move is spoken through
+ * a live region. `aria-activedescendant` was the alternative and was rejected:
+ * it needs focusable, id-bearing SVG descendants under a composite role, and
+ * its mapping out of SVG is inconsistent across screen readers. A live region
+ * says the same thing everywhere, and leaves `role="img"` - and therefore the
+ * existing screen-reader story - exactly as it was.
+ *
  * Colour rules, from the design language:
  *   - Every value is a VS Code theme token. No literals.
  *   - Status hue fills the node body at low opacity and paints its rail at
@@ -31,15 +57,29 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Bead, BeadsGraphModel } from "../types";
 import { GRAPHIC_TOKENS, statusHue, typeHue } from "../theme/tokens";
 import { icons } from "../icons";
+import { GraphToolbar } from "../common/GraphToolbar";
 import {
   applyLens,
   DEFAULT_LENS,
-  GRAPH_LENSES,
   GraphLens,
   LENS_LABELS,
   LensNode,
 } from "../../graph/lens";
-import { GraphLayoutEdgePath, GraphLayoutPosition, layoutGraph } from "../../graph/layout";
+import {
+  chainFilter,
+  chainsFrom,
+  findMatches,
+  neighboursOf,
+  stepFocus,
+  TraverseDirection,
+} from "../../graph/find";
+import { resolveDensity } from "../../graph/density";
+import {
+  GraphLayoutEdgePath,
+  GraphLayoutPosition,
+  layoutBounds,
+  layoutGraph,
+} from "../../graph/layout";
 
 export interface GraphCanvasProps {
   /** Bead metadata: titles, types, statuses. Beads missing here are not drawn. */
@@ -61,6 +101,13 @@ export interface GraphCanvasProps {
   /** The one selected bead, shared across surfaces. */
   selectedBeadId?: string | null;
   onSelectBead?: (beadId: string) => void;
+  /**
+   * Bump to move focus into the find field - this is how the extension's
+   * `beads.findInGraph` command reaches the canvas. Any change in the value
+   * triggers it, so a counter incremented per `focusGraphFind` message works
+   * and repeated invocations are not swallowed.
+   */
+  focusFindToken?: number;
   className?: string;
 }
 
@@ -76,6 +123,11 @@ const CORNER = 4;
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 6;
 
+/** Graph units kept between a cursor node and the edge of the viewport. */
+const CURSOR_MARGIN = 32;
+/** Padding around a fit-to-selection frame. */
+const FRAME_PADDING = 48;
+
 /**
  * Marker ids have to be unique per mounted canvas: two canvases sharing an id
  * would both point at whichever `<defs>` rendered last.
@@ -89,6 +141,8 @@ interface ViewBox {
   height: number;
 }
 
+const NO_POSITIONS = new Map<string, GraphLayoutPosition>();
+
 export function GraphCanvas({
   beads,
   graph,
@@ -97,19 +151,42 @@ export function GraphCanvas({
   focusId,
   selectedBeadId,
   onSelectBead,
+  focusFindToken,
   className,
 }: GraphCanvasProps): React.ReactElement {
   const [ownLens, setOwnLens] = useState<GraphLens>(DEFAULT_LENS);
-  const activeLens = lens ?? ownLens;
+  const requestedLens = lens ?? ownLens;
+
+  /** Set once the user has read the density notice and asked for it anyway. */
+  const [densityOverride, setDensityOverride] = useState(false);
+  const [query, setQuery] = useState("");
+  /** The node under the pointer, and the node under the keyboard cursor. */
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const [cursorId, setCursorId] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
 
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const findRef = useRef<HTMLInputElement | null>(null);
   const markerId = useMemo(() => `graph-canvas-${++canvasSequence}`, []);
 
   const anchor = focusId ?? selectedBeadId ?? null;
 
+  // The requested lens is evaluated first so the density decision has a real
+  // node count to judge. Only the lens that survives that decision is laid out,
+  // so a 500-node request never pays for a dagre pass nobody can read.
   const view = useMemo(() => {
     if (!graph) return null;
-    const result = applyLens(graph, beads, { lens: activeLens, focusId: anchor });
+    const requested = applyLens(graph, beads, { lens: requestedLens, focusId: anchor });
+    const density = resolveDensity({
+      requested: requestedLens,
+      nodeCount: requested.nodes.length,
+      override: densityOverride,
+    });
+    const result =
+      density.lens === requestedLens
+        ? requested
+        : applyLens(graph, beads, { lens: density.lens, focusId: anchor });
+
     const sized = result.nodes.map((node) => ({
       id: node.id,
       width: NODE_WIDTH,
@@ -120,12 +197,46 @@ export function GraphCanvas({
       result.edges.map((edge) => ({ source: edge.blocker, target: edge.blocked })),
       { direction: "LR" }
     );
-    return { result, sized, laidOut };
-  }, [graph, beads, activeLens, anchor]);
+    return { result, density, sized, laidOut };
+  }, [graph, beads, requestedLens, anchor, densityOverride]);
 
   const nodes = view?.result.nodes ?? [];
   const edges = view?.result.edges ?? [];
+  const drawnLens = view?.result.lens ?? requestedLens;
   const bounds = view?.laidOut.bounds;
+  const positions = view?.laidOut.positions ?? NO_POSITIONS;
+
+  const drawn = useMemo(() => new Set(nodes.map((node) => node.id)), [nodes]);
+  const sizes = useMemo(
+    () => new Map((view?.sized ?? []).map((node) => [node.id, node])),
+    [view]
+  );
+  const tangled = useMemo(
+    () => new Set(nodes.filter((node) => node.inCycle).map((node) => node.id)),
+    [nodes]
+  );
+
+  // Find marks in place and dims the rest; the node set is untouched, so the
+  // layout the user has already read stays exactly where it was.
+  const find = useMemo(
+    () =>
+      findMatches(
+        nodes.map((node) => ({ id: node.id, label: node.label, members: node.members })),
+        query
+      ),
+    [nodes, query]
+  );
+  const matched = useMemo(() => new Set(find.matches), [find]);
+
+  // Hover - or the keyboard cursor, which is the same affordance without a
+  // mouse - isolates one bead's blocker and blocked chains.
+  const isolateId = hoverId ?? cursorId;
+  const chains = useMemo(() => {
+    if (!isolateId || !drawn.has(isolateId)) return null;
+    return chainsFrom(edges, isolateId);
+  }, [edges, isolateId, drawn]);
+  const connected = useMemo(() => (chains ? new Set(chains.connected) : null), [chains]);
+  const onChain = useMemo(() => (chains ? chainFilter(chains) : null), [chains]);
 
   // Refit whenever the picture itself changes - a new lens, a new project, a
   // refresh that adds beads. Keyed on the measured box rather than on its
@@ -139,6 +250,23 @@ export function GraphCanvas({
   }, [fitKey]);
   const [viewBox, setViewBox] = useState<ViewBox | null>(fit);
   useEffect(() => setViewBox(fit), [fit]);
+
+  // A cursor pointing at a bead this lens no longer draws is a cursor pointing
+  // at nothing; drop it rather than isolating an invisible chain.
+  useEffect(() => {
+    setCursorId((current) => (current && drawn.has(current) ? current : null));
+    setHoverId((current) => (current && drawn.has(current) ? current : null));
+  }, [drawn]);
+
+  // Only a *change* in the token moves focus. Acting on the value present at
+  // mount would let a graph opening for any other reason steal the caret.
+  const seenFindToken = useRef(focusFindToken);
+  useEffect(() => {
+    if (focusFindToken === undefined || focusFindToken === seenFindToken.current) return;
+    seenFindToken.current = focusFindToken;
+    findRef.current?.focus();
+    findRef.current?.select();
+  }, [focusFindToken]);
 
   /** Client point -> graph coordinates, exact under any preserveAspectRatio. */
   const toGraphPoint = useCallback((clientX: number, clientY: number): GraphLayoutPosition => {
@@ -181,6 +309,65 @@ export function GraphCanvas({
     return () => svg.removeEventListener("wheel", onWheel);
   }, [zoomBy, toGraphPoint]);
 
+  /**
+   * Pan - never zoom - just far enough that a node is inside the viewport.
+   * Zooming to follow the cursor would change the scale the user chose on every
+   * keystroke, which makes the picture unreadable in the act of navigating it.
+   */
+  const ensureVisible = useCallback(
+    (id: string) => {
+      const position = positions.get(id);
+      const size = sizes.get(id);
+      if (!position || !size) return;
+      setViewBox((current) => {
+        if (!current) return current;
+        let { x, y } = current;
+        const left = position.x - CURSOR_MARGIN;
+        const right = position.x + size.width + CURSOR_MARGIN;
+        const top = position.y - CURSOR_MARGIN;
+        const bottom = position.y + size.height + CURSOR_MARGIN;
+        if (left < x) x = left;
+        else if (right > x + current.width) x = right - current.width;
+        if (top < y) y = top;
+        else if (bottom > y + current.height) y = bottom - current.height;
+        return x === current.x && y === current.y ? current : { ...current, x, y };
+      });
+    },
+    [positions, sizes]
+  );
+
+  /**
+   * Fit to selection: the bead plus one hop in each direction.
+   *
+   * One hop rather than the whole chain, because the question this answers is
+   * "where am I", and a frame that includes a twelve-deep chain answers a
+   * different one. The blast-radius lens is where the whole chain lives.
+   */
+  const frameNode = useCallback(
+    (id: string) => {
+      if (!view || !fit || !drawn.has(id)) return;
+      const wanted = new Set([id, ...neighboursOf(view.result.edges, id).all]);
+      const subset = view.sized.filter((node) => wanted.has(node.id));
+      if (subset.length === 0) return;
+
+      const box = layoutBounds(subset, view.laidOut.positions, FRAME_PADDING);
+      if (box.width <= 0 || box.height <= 0) return;
+
+      // Respect the zoom ceiling: framing one isolated node should not blow it
+      // up to fill an editor tab.
+      const width = clampZoom(box.width, fit.width);
+      const scale = width / box.width;
+      const height = box.height * scale;
+      setViewBox({
+        x: box.minX + box.width / 2 - width / 2,
+        y: box.minY + box.height / 2 - height / 2,
+        width,
+        height,
+      });
+    },
+    [view, fit, drawn]
+  );
+
   const drag = useRef<{ pointerId: number; x: number; y: number; moved: boolean } | null>(null);
   /** A pan that ends over a node must not also select it. */
   const suppressClick = useRef(false);
@@ -218,6 +405,7 @@ export function GraphCanvas({
       suppressClick.current = false;
       return;
     }
+    setCursorId(node.id);
     onSelectBead?.(node.id);
   };
 
@@ -226,57 +414,148 @@ export function GraphCanvas({
     onLensChange?.(next);
   };
 
-  const positions = view?.laidOut.positions ?? new Map<string, GraphLayoutPosition>();
-  const sizes = new Map(view?.sized.map((node) => [node.id, node]) ?? []);
+  /** What the live region says when the cursor lands somewhere. */
+  const describeNode = useCallback(
+    (id: string): string => {
+      const node = nodes.find((candidate) => candidate.id === id);
+      if (!node) return id;
+      const neighbours = neighboursOf(edges, id);
+      const blockers =
+        neighbours.blockers.length === 0
+          ? "no blockers"
+          : `${neighbours.blockers.length} ${plural(neighbours.blockers.length, "blocker")}`;
+      const blocked =
+        neighbours.blocked.length === 0
+          ? "blocks nothing"
+          : `blocks ${neighbours.blocked.length}`;
+      return `${node.id}, ${node.label}. ${blockers}, ${blocked}.`;
+    },
+    [nodes, edges]
+  );
+
+  /**
+   * Arrow keys walk the graph, not the DOM. The first press only reveals the
+   * cursor - on the selected bead when there is one - so a user who arrows into
+   * the canvas by accident has not lost their place.
+   */
+  const moveCursor = useCallback(
+    (direction: TraverseDirection) => {
+      if (nodes.length === 0) return;
+
+      if (!cursorId || !drawn.has(cursorId)) {
+        const start = selectedBeadId && drawn.has(selectedBeadId) ? selectedBeadId : nodes[0].id;
+        setCursorId(start);
+        ensureVisible(start);
+        setAnnouncement(describeNode(start));
+        return;
+      }
+
+      const next = stepFocus(edges, cursorId, direction);
+      if (!next) {
+        setAnnouncement(deadEnd(direction, cursorId));
+        return;
+      }
+      setCursorId(next);
+      ensureVisible(next);
+      setAnnouncement(describeNode(next));
+    },
+    [nodes, cursorId, drawn, selectedBeadId, edges, ensureVisible, describeNode]
+  );
+
+  const onCanvasKeyDown = (event: React.KeyboardEvent<SVGSVGElement>): void => {
+    const step: Record<string, TraverseDirection> = {
+      ArrowLeft: "blocker",
+      ArrowRight: "blocked",
+      ArrowUp: "previous",
+      ArrowDown: "next",
+    };
+
+    if (step[event.key]) {
+      event.preventDefault();
+      moveCursor(step[event.key]);
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      if (!cursorId) return;
+      event.preventDefault();
+      onSelectBead?.(cursorId);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setCursorId(null);
+      setAnnouncement("");
+      return;
+    }
+
+    if (event.key === "f" && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      findRef.current?.focus();
+      findRef.current?.select();
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      setViewBox(fit);
+    }
+  };
+
+  const onFindKeyDown = (event: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setQuery("");
+      svgRef.current?.focus();
+      return;
+    }
+    // Enter hands the first match to the rest of the extension: it becomes the
+    // cursor, gets framed, and - as the one selection - follows to every other
+    // surface.
+    if (event.key === "Enter" && find.matches.length > 0) {
+      event.preventDefault();
+      const first = find.matches[0];
+      setCursorId(first);
+      frameNode(first);
+      onSelectBead?.(first);
+      setAnnouncement(describeNode(first));
+    }
+  };
+
   const edgeByPair = new Map(edges.map((edge) => [`${edge.blocker}\t${edge.blocked}`, edge]));
 
-  const label = `Dependency graph, ${LENS_LABELS[activeLens].toLowerCase()} lens: ${
+  const label = `Dependency graph, ${LENS_LABELS[drawnLens].toLowerCase()} lens: ${
     nodes.length
   } ${nodes.length === 1 ? "bead" : "beads"}, ${edges.length} blocking ${
     edges.length === 1 ? "link" : "links"
   }`;
 
+  const fitTarget = cursorId ?? (selectedBeadId && drawn.has(selectedBeadId) ? selectedBeadId : null);
+
   return (
     <div className={`graph-canvas${className ? ` ${className}` : ""}`}>
-      <div className="graph-canvas-toolbar">
-        <div className="graph-canvas-lenses" role="group" aria-label="Graph lens">
-          {GRAPH_LENSES.map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={`graph-canvas-lens${option === activeLens ? " active" : ""}`}
-              aria-pressed={option === activeLens}
-              disabled={option === "blast-radius" && !anchor}
-              title={
-                option === "blast-radius" && !anchor
-                  ? "Select a bead to see what it touches"
-                  : undefined
-              }
-              onClick={() => chooseLens(option)}
-            >
-              {LENS_LABELS[option]}
-            </button>
-          ))}
-        </div>
+      <GraphToolbar
+        lens={requestedLens}
+        onLensChange={chooseLens}
+        anchored={Boolean(anchor)}
+        query={query}
+        onQueryChange={setQuery}
+        onQueryKeyDown={onFindKeyDown}
+        findInputRef={findRef}
+        matchCount={find.active ? find.matches.length : null}
+        nodeCount={nodes.length}
+        edgeCount={edges.length}
+        omitted={view?.result.omitted ?? 0}
+        onZoomIn={() => zoomBy(1 / 1.25)}
+        onZoomOut={() => zoomBy(1.25)}
+        onFitAll={() => setViewBox(fit)}
+        onFitSelection={() => fitTarget && frameNode(fitTarget)}
+        canFit={Boolean(fit)}
+        canFitSelection={Boolean(fitTarget)}
+      />
 
-        <p className="graph-canvas-count">
-          {nodes.length} {nodes.length === 1 ? "node" : "nodes"} · {edges.length}{" "}
-          {edges.length === 1 ? "link" : "links"}
-          {view && view.result.omitted > 0 && ` · ${view.result.omitted} not shown`}
-        </p>
-
-        <div className="graph-canvas-zoom" role="group" aria-label="Zoom">
-          <button type="button" onClick={() => zoomBy(1 / 1.25)} aria-label="Zoom in">
-            +
-          </button>
-          <button type="button" onClick={() => zoomBy(1.25)} aria-label="Zoom out">
-            −
-          </button>
-          <button type="button" onClick={() => setViewBox(fit)} disabled={!fit}>
-            Fit
-          </button>
-        </div>
-      </div>
+      {view && <DensityNotice view={view} onOverride={setDensityOverride} />}
 
       {graph && !graph.complete && (
         <p className="graph-canvas-degraded" role="status">
@@ -285,19 +564,23 @@ export function GraphCanvas({
       )}
 
       {edges.length === 0 || !viewBox ? (
-        <EmptyCanvas lens={activeLens} nodeCount={nodes.length} anchored={Boolean(anchor)} />
+        <EmptyCanvas lens={drawnLens} nodeCount={nodes.length} anchored={Boolean(anchor)} />
       ) : (
         <svg
           ref={svgRef}
-          className="graph-canvas-svg"
+          className={`graph-canvas-svg${connected ? " isolating" : ""}`}
           role="img"
+          tabIndex={0}
           aria-label={label}
+          aria-describedby={`${markerId}-help`}
           viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
           preserveAspectRatio="xMidYMid meet"
+          onKeyDown={onCanvasKeyDown}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
+          onPointerLeave={() => setHoverId(null)}
           // Node handlers run before this one, so clearing here only ever
           // discards a suppression the pan set and no node consumed.
           onClick={() => {
@@ -332,11 +615,15 @@ export function GraphCanvas({
           <g className="graph-canvas-edges">
             {view?.laidOut.edges.map((path) => {
               const edge = edgeByPair.get(`${path.source}\t${path.target}`);
-              const cycle = isCycleEdge(path, nodes);
+              const cycle = tangled.has(path.source) && tangled.has(path.target);
+              const offChain = Boolean(onChain && edge && !onChain(edge));
+              const offMatch = find.active && !(matched.has(path.source) && matched.has(path.target));
               return (
                 <path
                   key={`${path.source}\t${path.target}`}
-                  className={`graph-canvas-edge${cycle ? " in-cycle" : ""}`}
+                  className={`graph-canvas-edge${cycle ? " in-cycle" : ""}${
+                    offChain || offMatch ? " dimmed" : ""
+                  }`}
                   d={edgePath(path)}
                   fill="none"
                   stroke={cycle ? GRAPHIC_TOKENS.warning : GRAPHIC_TOKENS.neutral}
@@ -362,16 +649,90 @@ export function GraphCanvas({
                   width={size.width}
                   height={size.height}
                   selected={node.id === selectedBeadId}
-                  focused={node.id === anchor && activeLens === "blast-radius"}
+                  focused={node.id === anchor && drawnLens === "blast-radius"}
+                  cursor={node.id === cursorId}
+                  matched={find.active && matched.has(node.id)}
+                  dimmed={
+                    (find.active && !matched.has(node.id)) ||
+                    Boolean(connected && !connected.has(node.id))
+                  }
                   onSelect={selectNode}
+                  onHover={setHoverId}
                 />
               );
             })}
           </g>
         </svg>
       )}
+
+      {/* The keyboard model, spoken. Hidden text rather than a visible hint:
+          the picture already carries every pixel it can afford. */}
+      <p id={`${markerId}-help`} className="graph-canvas-offscreen">
+        Arrow left and right follow blocking links to a blocker or to a blocked bead. Arrow up and
+        down move between beads sharing a link. Enter selects. F finds a bead by id or title.
+      </p>
+      <p className="graph-canvas-offscreen" role="status" aria-live="polite">
+        {announcement}
+      </p>
     </div>
   );
+}
+
+/**
+ * What the canvas did about density, and how to undo it.
+ *
+ * Three states, and the notice is absent in the ordinary one. Silently
+ * rendering something other than the lens the user pressed would read as a bug
+ * in the lens; silently rendering five hundred overlapping nodes would read as
+ * a bug in the layout. Saying which, and offering the other, is the only honest
+ * option.
+ */
+function DensityNotice({
+  view,
+  onOverride,
+}: {
+  view: { density: ReturnType<typeof resolveDensity> };
+  onOverride: (override: boolean) => void;
+}): React.ReactElement | null {
+  const { density } = view;
+
+  if (density.autoCollapsed) {
+    return (
+      <p className="graph-canvas-density" role="status">
+        {LENS_LABELS[density.requested]} would draw {density.nodeCount} beads at once, past what
+        stays legible here. Showing {LENS_LABELS["epic-rollup"].toLowerCase()} instead.{" "}
+        <button type="button" className="graph-canvas-density-action" onClick={() => onOverride(true)}>
+          Draw all {density.nodeCount} anyway
+        </button>
+      </p>
+    );
+  }
+
+  if (density.overridden) {
+    return (
+      <p className="graph-canvas-density" role="status">
+        Drawing all {density.nodeCount} beads. Zoom in, or find a bead by id.{" "}
+        <button
+          type="button"
+          className="graph-canvas-density-action"
+          onClick={() => onOverride(false)}
+        >
+          Collapse to {LENS_LABELS["epic-rollup"].toLowerCase()}
+        </button>
+      </p>
+    );
+  }
+
+  if (density.dense) {
+    return (
+      <p className="graph-canvas-density" role="status">
+        {density.nodeCount} beads is past what this layout keeps legible. Find one by id, or select
+        one and switch to {LENS_LABELS["blast-radius"]}.
+      </p>
+    );
+  }
+
+  return null;
 }
 
 interface GraphNodeProps {
@@ -382,7 +743,12 @@ interface GraphNodeProps {
   height: number;
   selected: boolean;
   focused: boolean;
+  /** Under the keyboard cursor. Distinct from selected: this one is transient. */
+  cursor: boolean;
+  matched: boolean;
+  dimmed: boolean;
   onSelect: (node: LensNode) => void;
+  onHover: (id: string | null) => void;
 }
 
 function GraphNode({
@@ -393,13 +759,20 @@ function GraphNode({
   height,
   selected,
   focused,
+  cursor,
+  matched,
+  dimmed,
   onSelect,
+  onHover,
 }: GraphNodeProps): React.ReactElement {
   const hue = statusHue(node.status);
   const classes = [
     "graph-canvas-node",
     selected ? "selected" : "",
     focused ? "focused" : "",
+    cursor ? "cursor" : "",
+    matched ? "matched" : "",
+    dimmed ? "dimmed" : "",
     node.inCycle ? "in-cycle" : "",
     node.ready ? "ready" : "",
   ]
@@ -414,6 +787,8 @@ function GraphNode({
       // to a different picture. Reduced motion turns the transition off.
       style={{ transform: `translate(${x}px, ${y}px)` }}
       onClick={() => onSelect(node)}
+      onPointerEnter={() => onHover(node.id)}
+      onPointerLeave={() => onHover(null)}
     >
       <rect
         className="graph-canvas-node-body"
@@ -425,6 +800,21 @@ function GraphNode({
         stroke={hue}
       />
       <rect className="graph-canvas-node-rail" width={RAIL_WIDTH} height={height} fill={hue} />
+
+      {/* Outside the body so the cursor ring never competes with the selection
+          stroke or the dashed cycle stroke for the same edge. */}
+      {cursor && (
+        <rect
+          className="graph-canvas-node-cursor"
+          x={-3}
+          y={-3}
+          width={width + 6}
+          height={height + 6}
+          rx={CORNER + 2}
+          ry={CORNER + 2}
+          fill="none"
+        />
+      )}
 
       {/* Centred on the id line rather than on the node: the glyph and the id
           read as one label. */}
@@ -558,15 +948,26 @@ function edgePath(path: GraphLayoutEdgePath): string {
   return `${d} L ${last.x} ${last.y}`;
 }
 
-function isCycleEdge(path: GraphLayoutEdgePath, nodes: LensNode[]): boolean {
-  const tangled = (id: string): boolean => nodes.some((node) => node.id === id && node.inCycle);
-  return tangled(path.source) && tangled(path.target);
-}
-
 function clampZoom(width: number, fitWidth: number): number {
   const min = fitWidth / MAX_ZOOM;
   const max = fitWidth / MIN_ZOOM;
   return Math.min(max, Math.max(min, width));
+}
+
+/** Why the cursor did not move. Silence would read as a dropped keystroke. */
+function deadEnd(direction: TraverseDirection, from: string): string {
+  switch (direction) {
+    case "blocker":
+      return `Nothing blocks ${from}.`;
+    case "blocked":
+      return `${from} blocks nothing.`;
+    default:
+      return `No other bead shares a link with ${from}.`;
+  }
+}
+
+function plural(count: number, word: string): string {
+  return count === 1 ? word : `${word}s`;
 }
 
 /**
