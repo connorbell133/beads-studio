@@ -52,6 +52,7 @@ import { PriorityBadge } from "../common/PriorityBadge";
 import { TypeBadge } from "../common/TypeBadge";
 import { TypeIcon } from "../common/TypeIcon";
 import { LabelBadge } from "../common/LabelBadge";
+import { CriticalPath } from "../common/CriticalPath";
 import { FilterChip } from "../common/FilterChip";
 import { Table, Kanban, ListTree } from "lucide-react";
 import { ErrorMessage } from "../common/ErrorMessage";
@@ -426,6 +427,13 @@ export function IssuesView({
                 </span>
               )}
               {bead.treeRollup && <RollupBar rollup={bead.treeRollup} />}
+              {bead.treeCriticalPath !== undefined && (
+                <CriticalPath
+                  depth={bead.treeCriticalPath}
+                  chain={bead.treeCriticalChain}
+                  onSelectBead={onSelectBead}
+                />
+              )}
             </span>
           );
         },

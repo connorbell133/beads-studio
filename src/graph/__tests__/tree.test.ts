@@ -349,3 +349,63 @@ describe("projectKeyFor", () => {
     expect(projectKeyFor([{ id: "nodash" }])).toBe("");
   });
 });
+
+describe("critical path on epic rows", () => {
+  const epicWithChain = () => {
+    const nodes = [
+      { id: "epic", status: "open", issue_type: "epic" },
+      { id: "a", status: "open", issue_type: "task", parent: "epic" },
+      { id: "b", status: "open", issue_type: "task", parent: "epic" },
+      { id: "c", status: "open", issue_type: "task", parent: "epic" },
+    ];
+    const edges = [
+      { from: "b", to: "a", type: "blocks" },
+      { from: "c", to: "b", type: "blocks" },
+    ];
+    return deriveGraph(nodes, edges, { complete: true });
+  };
+
+  it("reports the depth of the deepest member chain", () => {
+    const graph = epicWithChain();
+    const beads = ["epic", "a", "b", "c"].map((id) => ({ id, title: id }));
+
+    const tree = buildTree(beads, graph);
+    const epic = tree.roots.find((r) => r.id === "epic");
+
+    expect(epic?.treeCriticalPath).toBe(3);
+  });
+
+  it("names the chain that makes it that deep, deepest member first", () => {
+    const graph = epicWithChain();
+    const beads = ["epic", "a", "b", "c"].map((id) => ({ id, title: id }));
+
+    const epic = buildTree(beads, graph).roots.find((r) => r.id === "epic");
+
+    expect(epic?.treeCriticalChain).toEqual(["c", "b", "a"]);
+  });
+
+  it("reports nothing for a bead with no members", () => {
+    // A depth on a leaf is just its own rank restated.
+    const graph = deriveGraph([{ id: "loner", status: "open", issue_type: "task" }], []);
+
+    const tree = buildTree([{ id: "loner", title: "loner" }], graph);
+
+    expect(tree.orphans[0]?.treeCriticalPath).toBeUndefined();
+  });
+
+  it("reports depth 1 for an epic whose members never block each other", () => {
+    const graph = deriveGraph(
+      [
+        { id: "epic", status: "open", issue_type: "epic" },
+        { id: "a", status: "open", issue_type: "task", parent: "epic" },
+        { id: "b", status: "open", issue_type: "task", parent: "epic" },
+      ],
+      []
+    );
+    const beads = ["epic", "a", "b"].map((id) => ({ id, title: id }));
+
+    const epic = buildTree(beads, graph).roots.find((r) => r.id === "epic");
+
+    expect(epic?.treeCriticalPath).toBe(1);
+  });
+});

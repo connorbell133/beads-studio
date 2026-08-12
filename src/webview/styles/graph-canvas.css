@@ -362,3 +362,26 @@
     transition: none;
   }
 }
+
+/* Coordination beads - gates, agents, roles, messages.
+ *
+ * Drawn only because they block visible work. Omitting them left a hole in the
+ * chain exactly where the ready lane names a blocker, so the picture and the
+ * lane disagreed about why a bead was stuck. They are still not work, so they
+ * read as infrastructure: neutral, dashed, and lighter than everything around
+ * them. The dash is what carries the distinction in a forced-colors theme,
+ * where the neutral hue is replaced by the system palette. */
+.graph-canvas-node.coordination .graph-canvas-node-body {
+  stroke-dasharray: 3 3;
+  fill-opacity: 0.06;
+}
+
+.graph-canvas-node.coordination .graph-canvas-node-rail {
+  opacity: 0.55;
+}
+
+.graph-canvas-node.coordination .graph-canvas-node-title,
+.graph-canvas-node.coordination .graph-canvas-node-id {
+  fill: var(--vscode-descriptionForeground);
+  font-style: italic;
+}

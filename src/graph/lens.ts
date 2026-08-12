@@ -76,6 +76,13 @@ export interface LensNode {
   members: string[];
   /** True when the node stands for more than itself. */
   rolled: boolean;
+  /**
+   * A coordination bead - a gate, agent, role or message - drawn only because
+   * it blocks visible work. These are not work, so they read muted, but
+   * omitting them left a hole in the chain exactly where the ready lane names
+   * a blocker, and the two surfaces disagreed about why something was stuck.
+   */
+  coordination: boolean;
   /** Closed-of-total across `members`, on rolled nodes only. */
   progress?: { closed: number; total: number };
   /**
@@ -124,6 +131,8 @@ interface Context {
   blocks: Map<string, string[]>;
   /** blocked -> blocker, between visible beads only. */
   blockedBy: Map<string, string[]>;
+  /** Ids admitted only because they gate visible work. Drawn muted. */
+  coordination: Set<string>;
 }
 
 export function applyLens(
@@ -158,12 +167,30 @@ function buildContext(
   const byId = new Map(beads.map((bead) => [bead.id, bead]));
 
   const visible = new Map<string, LensBead>();
+  const coordination = new Set<string>();
   const ids: string[] = [];
   for (const id of Object.keys(model.nodes)) {
     const bead = byId.get(id);
     if (!bead || hidden.has(bead.type ?? "")) continue;
     visible.set(id, bead);
     ids.push(id);
+  }
+
+  // Re-admit a coordination bead that actually gates something visible. It is
+  // not work and never appears as a chain of its own, but dropping it broke the
+  // chain precisely where the ready lane names it as the blocker - so the
+  // picture and the lane disagreed about why a bead was stuck. Re-admitting the
+  // real node keeps them consistent without inventing an edge bd never
+  // recorded, which is what bridging across it would have done.
+  for (const id of [...ids]) {
+    for (const blocker of model.nodes[id].blockedBy) {
+      if (visible.has(blocker)) continue;
+      const bead = byId.get(blocker);
+      if (!bead || !hidden.has(bead.type ?? "")) continue;
+      visible.set(blocker, bead);
+      coordination.add(blocker);
+      ids.push(blocker);
+    }
   }
 
   const blocks = new Map<string, string[]>(ids.map((id) => [id, []]));
@@ -176,7 +203,7 @@ function buildContext(
     }
   }
 
-  return { beads: visible, ids, blocks, blockedBy };
+  return { beads: visible, ids, blocks, blockedBy, coordination };
 }
 
 /**
@@ -316,6 +343,7 @@ function finish(
       blocked: derived.blockedBy.length > 0,
       inCycle: derived.inCycle,
       leverage: derived.leverage,
+      coordination: context.coordination.has(id),
       rank: derived.rank,
       members: ordered,
       rolled: ordered.length > 1,

@@ -52,6 +52,15 @@ export type TreeBead<T> = T & {
   treeContext: boolean;
   /** Present only when the bead has children at all. */
   treeRollup?: TreeRollup;
+  /**
+   * Longest blocker chain among this bead's members, when it has any.
+   *
+   * The one planning number that does not improve by adding people: an epic
+   * nine sequential beads deep takes nine turns however many people work it.
+   */
+  treeCriticalPath?: number;
+  /** The chain that sets treeCriticalPath, nearest blocker first. */
+  treeCriticalChain?: string[];
   /** Its parent link was dropped to break a cycle. */
   treeCycle: boolean;
 };
@@ -132,6 +141,7 @@ export function buildTree<T extends { id: string }>(
       treeDepth: depthOf.get(bead.id) ?? 0,
       treeContext: !isMatch(bead.id),
       treeRollup: rollupFor(graph, bead.id),
+      ...criticalPathFor(graph, bead.id),
       treeCycle: cycleSet.has(bead.id),
     });
   }
@@ -233,6 +243,34 @@ function computeDepths(included: Set<string>, parentOf: Map<string, string>): Ma
     }
   }
   return depthOf;
+}
+
+/**
+ * The epic's critical path and the chain that sets it.
+ *
+ * Only reported for beads that actually contain members - a depth on a leaf is
+ * just its own rank restated. The chain comes from the deepest member's
+ * blockerChain, which is the sequence that makes the epic that deep.
+ */
+function criticalPathFor(
+  graph: BeadsGraphModel,
+  id: string
+): { treeCriticalPath?: number; treeCriticalChain?: string[] } {
+  const node = graph.nodes[id];
+  const depth = node?.criticalPath;
+  if (!node || depth === undefined || node.children.length === 0) {
+    return {};
+  }
+
+  const deepest = node.children.reduce((best, child) =>
+    (graph.nodes[child]?.rank ?? 0) > (graph.nodes[best]?.rank ?? 0) ? child : best
+  );
+  const chain = graph.nodes[deepest]?.blockerChain ?? [];
+
+  return {
+    treeCriticalPath: depth,
+    treeCriticalChain: [deepest, ...chain],
+  };
 }
 
 /** No children means no rollup. An epic reporting `0/0` is noise, not progress. */

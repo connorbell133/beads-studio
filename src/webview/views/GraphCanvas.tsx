@@ -775,6 +775,7 @@ function GraphNode({
     dimmed ? "dimmed" : "",
     node.inCycle ? "in-cycle" : "",
     node.ready ? "ready" : "",
+    node.coordination ? "coordination" : "",
   ]
     .filter(Boolean)
     .join(" ");

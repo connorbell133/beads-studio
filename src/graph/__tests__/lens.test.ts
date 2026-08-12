@@ -71,9 +71,10 @@ describe("full lens", () => {
     expect(result.omitted).toBe(4);
   });
 
-  it("drops the edges of a hidden bead rather than bridging across it", () => {
-    // A bridged edge would claim a dependency bd never recorded. The gate still
-    // gates readiness in the model; it is just not a thing to look at.
+  it("draws a gating coordination bead rather than leaving a hole in the chain", () => {
+    // Dropping the gate broke the chain exactly where the ready lane names it
+    // as the blocker, so the picture and the lane disagreed about why c was
+    // stuck. The real node is drawn instead - muted, because it is not work.
     const { model, beads } = build(
       [raw("a"), raw("gate1", { issue_type: "gate" }), raw("c")],
       [blocks("gate1", "a"), blocks("c", "gate1")]
@@ -81,9 +82,25 @@ describe("full lens", () => {
 
     const result = applyLens(model, beads, { lens: "full" });
 
-    expect(ids(result)).toEqual(["a", "c"]);
+    expect(ids(result).sort()).toEqual(["a", "c", "gate1"]);
+    expect(result.nodes.find((n) => n.id === "gate1")?.coordination).toBe(true);
+    expect(result.nodes.find((n) => n.id === "a")?.coordination).toBe(false);
+    // The chain is continuous and every edge is one bd actually recorded.
+    expect(pairs(result)).toEqual(["a->gate1", "gate1->c"]);
+  });
+
+  it("still never bridges across a hidden bead", () => {
+    // Re-admitting a gate is not the same as inventing c->a. A coordination
+    // bead that gates nothing visible stays out entirely.
+    const { model, beads } = build(
+      [raw("a"), raw("agent1", { issue_type: "agent" })],
+      [blocks("agent1", "a")]
+    );
+
+    const result = applyLens(model, beads, { lens: "full" });
+
+    expect(ids(result)).toEqual(["a"]);
     expect(result.edges).toEqual([]);
-    expect(model.nodes.c.blockedBy).toEqual(["gate1"]);
   });
 
   it("draws blocking edges only, never parent-child", () => {
