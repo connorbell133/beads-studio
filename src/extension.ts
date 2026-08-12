@@ -13,6 +13,8 @@ import { BeadsPanelViewProvider } from "./providers/BeadsPanelViewProvider";
 import { BeadDetailsViewProvider } from "./providers/BeadDetailsViewProvider";
 import { BeadsGraphPanel } from "./providers/BeadsGraphPanel";
 import { BeadsSelection } from "./providers/BeadsSelection";
+import { BeadsDiagnostics } from "./providers/BeadsDiagnostics";
+import { BeadsWebviewHost } from "./providers/BeadsWebviewHost";
 import { createLogger, Logger } from "./utils/logger";
 
 let log: Logger;
@@ -22,6 +24,7 @@ let beadsPanelProvider: BeadsPanelViewProvider;
 let detailsProvider: BeadDetailsViewProvider;
 let graphPanel: BeadsGraphPanel;
 let selection: BeadsSelection;
+let diagnostics: BeadsDiagnostics;
 let statusBar: vscode.StatusBarItem;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -81,6 +84,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // selection would be six places to lose your place.
   selection = new BeadsSelection();
   context.subscriptions.push(selection);
+
+  // A dependency cycle is a data defect the Problems panel can carry. Before
+  // this it rendered as an infinitely-expanding tree and nothing else.
+  diagnostics = new BeadsDiagnostics(log);
+  context.subscriptions.push(diagnostics);
+  context.subscriptions.push(
+    BeadsWebviewHost.observeGraph((model, project) => diagnostics.update(model, project))
+  );
   context.subscriptions.push(
     selection.onDidChange(({ beadId, origin }) => {
       for (const surface of [dashboardProvider, beadsPanelProvider, detailsProvider, graphPanel]) {

@@ -13,6 +13,7 @@ import * as vscode from "vscode";
 import { BeadsProjectManager } from "../backend/BeadsProjectManager";
 import {
   Bead,
+  BeadsProject,
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
   issueToWebviewBead,
@@ -25,6 +26,30 @@ import { resolveEnvVariables } from "../utils/resolve-env-variables";
 export type LoadReason = "initial" | "projectChange" | "manualRefresh" | "background";
 
 export abstract class BeadsWebviewHost {
+  /**
+   * Observers notified whenever any surface derives a fresh graph.
+   *
+   * Static because the consumers are extension-global - there is one Problems
+   * collection for the workspace, not one per view - and because every surface
+   * already derives on its own refresh, so hanging the notification off the
+   * derive avoids a second read just to feed them.
+   */
+  private static readonly graphObservers: Array<
+    (model: BeadsGraphModel, project: BeadsProject | null) => void
+  > = [];
+
+  public static observeGraph(
+    observer: (model: BeadsGraphModel, project: BeadsProject | null) => void
+  ): vscode.Disposable {
+    BeadsWebviewHost.graphObservers.push(observer);
+    return {
+      dispose: () => {
+        const index = BeadsWebviewHost.graphObservers.indexOf(observer);
+        if (index >= 0) BeadsWebviewHost.graphObservers.splice(index, 1);
+      },
+    };
+  }
+
   protected readonly extensionUri: vscode.Uri;
   protected readonly projectManager: BeadsProjectManager;
   protected readonly log: Logger;
@@ -65,6 +90,16 @@ export abstract class BeadsWebviewHost {
       .map(issueToWebviewBead)
       .filter((bead): bead is Bead => bead !== null);
     const model = deriveGraph(payload.nodes, payload.edges, { complete: payload.complete });
+
+    const project = this.projectManager.getActiveProject();
+    for (const observer of BeadsWebviewHost.graphObservers) {
+      try {
+        observer(model, project);
+      } catch (error) {
+        // An observer must never take down a view's data load.
+        this.log.debug(`Graph observer failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
 
     return { beads, model };
   }
