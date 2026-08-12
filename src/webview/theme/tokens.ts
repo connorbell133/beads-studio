@@ -67,6 +67,25 @@ export function statusHue(status: string): string {
 }
 
 /**
+ * Node hue for graph surfaces, where what matters is the *derived* state.
+ *
+ * `open` is where raw status lies: an open bead with open blockers is not
+ * available, and painting it ready's green tells the user the opposite of what
+ * the edges into it say. So on the canvas, green is earned by being unblocked,
+ * and an open bead still waiting on its blockers wears warning yellow, the
+ * "not yet" of this palette. Keyed on blockage rather than the ready flag,
+ * because an unblocked coordination bead is not-ready (it is not work) but is
+ * not waiting on anything either. Every other status keeps its badge hue:
+ * in_progress is already about what is happening, not what could.
+ */
+export function readinessHue(status: string, blocked: boolean): string {
+  if (status === "open") {
+    return blocked ? GRAPHIC_TOKENS.warning : GRAPHIC_TOKENS.success;
+  }
+  return statusHue(status);
+}
+
+/**
  * Hue families for bead types.
  *
  * Six usable hues cannot uniquely encode fourteen types, and pretending

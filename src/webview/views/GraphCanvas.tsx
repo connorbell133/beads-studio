@@ -41,10 +41,11 @@
  *
  * Colour rules, from the design language:
  *   - Every value is a VS Code theme token. No literals.
- *   - Status hue fills the node body at low opacity and paints its rail at
- *     full strength; labels read in `--vscode-foreground`, never on a chart
- *     hue, which is what keeps the 4.5:1 text bar while the 3:1 graphic bar
- *     carries the colour.
+ *   - Derived-state hue fills the node body at low opacity and paints its rail
+ *     at full strength: green is earned by readiness, not by the raw `open`
+ *     status, so a blocked bead never wears "good to go" (readinessHue).
+ *     Labels read in `--vscode-foreground`, never on a chart hue, which is
+ *     what keeps the 4.5:1 text bar while the 3:1 graphic bar carries colour.
  *   - Type is carried by the icon, not by the fill. Six usable hues cannot
  *     encode fourteen types and should not try.
  *
@@ -55,7 +56,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bead, BeadsGraphModel } from "../types";
-import { GRAPHIC_TOKENS, statusHue, typeHue } from "../theme/tokens";
+import { GRAPHIC_TOKENS, readinessHue, typeHue } from "../theme/tokens";
 import { icons } from "../icons";
 import { GraphToolbar } from "../common/GraphToolbar";
 import {
@@ -850,7 +851,7 @@ function GraphNode({
   onSelect,
   onHover,
 }: GraphNodeProps): React.ReactElement {
-  const hue = statusHue(node.status);
+  const hue = readinessHue(node.status, node.blocked);
   const classes = [
     "graph-canvas-node",
     selected ? "selected" : "",
@@ -917,6 +918,13 @@ function GraphNode({
       {!node.ready && node.leverage > 0 && (
         <text className="graph-canvas-node-flag" x={width - 12} y={height / 2 - 9} textAnchor="end">
           unblocks {node.leverage}
+        </text>
+      )}
+      {/* The word behind the warning hue - state is never colour alone. Only
+          where no more useful flag already claims the corner. */}
+      {!node.ready && node.blocked && node.leverage === 0 && (
+        <text className="graph-canvas-node-flag" x={width - 12} y={height / 2 - 9} textAnchor="end">
+          blocked
         </text>
       )}
 
