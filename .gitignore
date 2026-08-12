@@ -10,7 +10,6 @@ tmp/
 .cache/
 .openvscode-server/
 .local/
-.beads/
 
 # Local environment notes (not committed)
 CLAUDE.local.md
@@ -27,6 +26,4 @@ opencode.json
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
-.beads-credential-key
-.beads/proxieddb/
 *.gate.lock*
