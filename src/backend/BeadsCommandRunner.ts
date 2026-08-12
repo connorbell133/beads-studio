@@ -5,6 +5,7 @@ import {
   AddCommentArgs,
   BackendCompatibility,
   BeadsBackend,
+  BeadsGraphPayload,
   BeadsIssue,
   CloseIssueArgs,
   CreateIssueArgs,
@@ -12,6 +13,7 @@ import {
   MIN_SUPPORTED_BD_VERSION,
   UpdateIssueArgs,
 } from "./BeadsBackend";
+import { edgesFromIssues } from "./types";
 
 const execFileAsync = util.promisify(execFile);
 const BD_COMMAND_TIMEOUT_MS = 30000;
@@ -95,6 +97,19 @@ export class BeadsCommandRunner implements BeadsBackend {
   async list(): Promise<BeadsIssue[]> {
     const result = await this.runReadJson(createListCommandArgs(), { cacheTtlMs: 750 });
     return Array.isArray(result) ? (result as BeadsIssue[]) : [];
+  }
+
+  /**
+   * `bd list` already ships each bead's edges inline, so the graph read is the
+   * same call plus edge extraction.
+   *
+   * `complete` is false until U2 teaches this backend to ask for gate and infra
+   * beads: today's args reproduce `bd list`'s default filtering, so edges
+   * pointing at a hidden bead land with no node behind them.
+   */
+  async listGraph(): Promise<BeadsGraphPayload> {
+    const nodes = await this.list();
+    return { nodes, edges: edgesFromIssues(nodes), complete: false };
   }
 
   async info(): Promise<Record<string, unknown>> {

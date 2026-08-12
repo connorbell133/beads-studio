@@ -6,6 +6,7 @@ import {
   AddCommentArgs,
   BackendCompatibility,
   BeadsBackend,
+  BeadsGraphPayload,
   BeadsIssue,
   CloseIssueArgs,
   CreateIssueArgs,
@@ -13,6 +14,7 @@ import {
   UpdateIssueArgs,
 } from "./BeadsBackend";
 import { BeadsCommandRunner } from "./BeadsCommandRunner";
+import { edgesFromIssues } from "./types";
 
 const execFileAsync = util.promisify(execFile);
 
@@ -167,6 +169,19 @@ export class BeadsDoltBackend implements BeadsBackend {
         closed_at: this.optionalTimestamp(row.closed_at),
       } satisfies BeadsIssue));
     });
+  }
+
+  /**
+   * The SQL path has no flag-availability problem, so its node set will be
+   * complete once U3 drops the load-time type filter and joins dependencies.
+   *
+   * Until then this reports `complete: false` and no edges rather than claiming
+   * a graph it does not have: list() selects 15 columns and never touches the
+   * dependencies table, so there is nothing here to extract.
+   */
+  async listGraph(): Promise<BeadsGraphPayload> {
+    const nodes = await this.list();
+    return { nodes, edges: edgesFromIssues(nodes), complete: false };
   }
 
   async show(id: string): Promise<BeadsIssue | null> {

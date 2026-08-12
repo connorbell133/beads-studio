@@ -1,4 +1,4 @@
-import type { BackendBeadDependency } from "./types";
+import type { BeadEdge, RawDependency } from "./types";
 
 /**
  * Oldest bd release the extension supports.
@@ -26,9 +26,25 @@ export interface BeadsIssue {
   created_at: string;
   updated_at: string;
   closed_at?: string;
-  dependencies?: BackendBeadDependency[];
-  dependents?: BackendBeadDependency[];
+  dependencies?: RawDependency[];
+  dependents?: RawDependency[];
   comments?: Array<{ id: string; author: string; text: string; created_at: string }>;
+}
+
+/**
+ * One complete read of a project: every bead the backend can see, plus every
+ * edge among them.
+ *
+ * `complete` is false when the node set is known to be partial - today only on
+ * the CLI path, when the installed bd cannot be asked to include gate and infra
+ * beads. A partial node set does not make readiness wrong, because an edge
+ * pointing at a bead outside `nodes` is treated as an open blocker, but it does
+ * make "blocked" over-report. Consumers surface that rather than hiding it.
+ */
+export interface BeadsGraphPayload {
+  nodes: BeadsIssue[];
+  edges: BeadEdge[];
+  complete: boolean;
 }
 
 export interface CreateIssueArgs {
@@ -96,6 +112,15 @@ export interface BeadsBackend {
   startDoltServer(): Promise<string>;
   stopDoltServer(): Promise<string>;
   list(): Promise<BeadsIssue[]>;
+  /**
+   * The nodes and edges of the whole project in one read.
+   *
+   * Separate from list() because the graph read wants every bead - including
+   * the coordination types bd hides by default - while list() keeps parity with
+   * `bd list` for the surfaces that display it. Callers deriving readiness must
+   * use this one; filtering hidden types is a display concern.
+   */
+  listGraph(): Promise<BeadsGraphPayload>;
   show(id: string): Promise<BeadsIssue | null>;
   create(args: CreateIssueArgs): Promise<BeadsIssue>;
   update(args: UpdateIssueArgs): Promise<BeadsIssue>;
