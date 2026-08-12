@@ -13,7 +13,7 @@
 
 [Install](#install) · [Why](#why) · [Features](#features) · [Quick start](#quick-start) · [Beads CLI ↗](https://github.com/gastownhall/beads)
 
-<img src="docs/images/beads-issues.png" alt="Beads UI in VS Code" width="850">
+<img src="docs/images/beads-ui-demo.gif" alt="Beads UI in VS Code — pulse dashboard and dependency graph" width="850">
 
 </div>
 
