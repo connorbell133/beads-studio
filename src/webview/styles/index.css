@@ -1,0 +1,4 @@
+/* Per-surface stylesheets.
+ *
+ * Split out of the single 3000-line styles.css so surfaces built in parallel
+ * append to their own file rather than colliding at the end of one. */
