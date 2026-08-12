@@ -14,9 +14,85 @@ import {
   UpdateIssueArgs,
 } from "./BeadsBackend";
 import { BeadsCommandRunner } from "./BeadsCommandRunner";
-import { edgesFromIssues } from "./types";
+import { BeadEdge } from "./types";
 
 const execFileAsync = util.promisify(execFile);
+
+type SqlRow = Record<string, unknown>;
+
+// ---------------------------------------------------------------------------
+// Pure row mapping.
+//
+// Running a query needs a live Dolt server; interpreting what comes back does
+// not. These are module-level and exported so the mapping is covered by tests
+// while the query path stays covered by manual verification.
+// ---------------------------------------------------------------------------
+
+function str(value: unknown): string {
+  return value == null ? "" : String(value);
+}
+
+function optionalStr(value: unknown): string | undefined {
+  const text = str(value).trim();
+  return text.length > 0 ? text : undefined;
+}
+
+function num(value: unknown, fallback: number): number {
+  // `Number(null)` is 0, not NaN, so a null column would otherwise map to the
+  // numerically-lowest value. For priority that means a bead with no priority
+  // set renders as P0 Critical. Guard the empty cases the way optionalNum does.
+  if (value == null || value === "") return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function optionalNum(value: unknown): number | undefined {
+  if (value == null || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/** Maps one `issues` row to a BeadsIssue. Labels are loaded separately. */
+export function rowToBeadsIssue(row: SqlRow, labels: string[] = []): BeadsIssue {
+  return {
+    id: str(row.id),
+    title: str(row.title),
+    description: optionalStr(row.description),
+    design: optionalStr(row.design),
+    acceptance_criteria: optionalStr(row.acceptance_criteria),
+    notes: optionalStr(row.notes),
+    status: str(row.status),
+    priority: num(row.priority, 4),
+    issue_type: str(row.issue_type),
+    assignee: optionalStr(row.assignee),
+    labels,
+    estimated_minutes: optionalNum(row.estimated_minutes),
+    external_ref: optionalStr(row.external_ref),
+    created_at: str(row.created_at),
+    updated_at: str(row.updated_at),
+    closed_at: optionalStr(row.closed_at),
+  };
+}
+
+/**
+ * Maps `dependencies` rows to edges, in the same direction the CLI path uses:
+ * `issue_id` is the dependent side, the target column is the blocker.
+ *
+ * A row whose target is null is dropped. On bd >= 1.1 the target expression
+ * coalesces across issue/wisp/external columns, so a dependency pointing at a
+ * non-issue target resolves to nothing an issue graph can use - and a half-edge
+ * would become a permanent unknown blocker on whatever it dangled from.
+ */
+export function rowsToBeadEdges(rows: SqlRow[]): BeadEdge[] {
+  const edges: BeadEdge[] = [];
+  for (const row of rows) {
+    const from = optionalStr(row.issue_id);
+    const to = optionalStr(row.depends_on_id);
+    if (!from || !to) continue;
+    edges.push({ from, to, type: optionalStr(row.type) ?? "blocks" });
+  }
+  return edges;
+}
 
 interface DoltConnectionInfo {
   host: string;
@@ -34,8 +110,6 @@ interface DoltShowInfo {
   connection_ok?: boolean;
   shared_server?: boolean;
 }
-
-type SqlRow = Record<string, unknown>;
 
 /**
  * Issue types `bd list` hides unless asked for explicitly (--include-gates,
@@ -150,38 +224,68 @@ export class BeadsDoltBackend implements BeadsBackend {
       const ids = rows.map((row) => String(row.id));
       const labelsByIssue = await this.loadLabels(ids);
 
-      return rows.map((row) => ({
-        id: String(row.id),
-        title: this.str(row.title),
-        description: this.optionalStr(row.description),
-        design: this.optionalStr(row.design),
-        acceptance_criteria: this.optionalStr(row.acceptance_criteria),
-        notes: this.optionalStr(row.notes),
-        status: this.str(row.status),
-        priority: this.num(row.priority, 4),
-        issue_type: this.str(row.issue_type),
-        assignee: this.optionalStr(row.assignee),
-        labels: labelsByIssue.get(String(row.id)) ?? [],
-        estimated_minutes: this.optionalNum(row.estimated_minutes),
-        external_ref: this.optionalStr(row.external_ref),
-        created_at: this.timestamp(row.created_at),
-        updated_at: this.timestamp(row.updated_at),
-        closed_at: this.optionalTimestamp(row.closed_at),
-      } satisfies BeadsIssue));
+      return rows.map((row) => rowToBeadsIssue(row, labelsByIssue.get(String(row.id)) ?? []));
     });
   }
 
   /**
-   * The SQL path has no flag-availability problem, so its node set will be
-   * complete once U3 drops the load-time type filter and joins dependencies.
+   * The complete graph read: every bead including the coordination types
+   * `list()` hides, plus every edge among them, in two queries.
    *
-   * Until then this reports `complete: false` and no edges rather than claiming
-   * a graph it does not have: list() selects 15 columns and never touches the
-   * dependencies table, so there is nothing here to extract.
+   * This runs its own query rather than relaxing `list()` because the two reads
+   * answer different questions. `list()` keeps parity with `bd list` for the
+   * surfaces that display it; the graph read wants the nodes behind every edge
+   * so readiness is derived over a complete set. Filtering hidden types is a
+   * display concern, and doing it here is what made the CLI path's graph wrong.
+   *
+   * Templates and ephemeral beads stay excluded, matching what
+   * `--include-gates --include-infra` gives the CLI path - `--include-templates`
+   * is a separate opt-in there, so including them here would break parity.
    */
   async listGraph(): Promise<BeadsGraphPayload> {
-    const nodes = await this.list();
-    return { nodes, edges: edgesFromIssues(nodes), complete: false };
+    return this.coalesceRead("listGraph", async () => {
+      const { targetExpr } = await this.getDepSqlParts();
+
+      const [rows, edgeRows] = await Promise.all([
+        this.query<SqlRow>(`
+          SELECT
+            id,
+            title,
+            description,
+            design,
+            acceptance_criteria,
+            notes,
+            status,
+            priority,
+            issue_type,
+            NULLIF(assignee, '') AS assignee,
+            estimated_minutes,
+            NULLIF(external_ref, '') AS external_ref,
+            created_at,
+            updated_at,
+            closed_at
+          FROM issues
+          WHERE (ephemeral = 0 OR ephemeral IS NULL)
+            AND (is_template = 0 OR is_template IS NULL)
+          ORDER BY updated_at DESC
+        `),
+        this.query<SqlRow>(`
+          SELECT
+            d.issue_id AS issue_id,
+            ${targetExpr} AS depends_on_id,
+            d.type AS type
+          FROM dependencies d
+        `),
+      ]);
+
+      const labelsByIssue = await this.loadLabels(rows.map((row) => String(row.id)));
+
+      return {
+        nodes: rows.map((row) => rowToBeadsIssue(row, labelsByIssue.get(String(row.id)) ?? [])),
+        edges: rowsToBeadEdges(edgeRows),
+        complete: true,
+      };
+    });
   }
 
   async show(id: string): Promise<BeadsIssue | null> {
