@@ -271,7 +271,7 @@ describe("deriveGraph hierarchy", () => {
     expect(g.nodes.epic.childCounts).toBeUndefined();
   });
 
-  it("collects parentless beads as orphans and excludes epic children", () => {
+  it("collects parentless beads, including top-level epics", () => {
     const nodes = [
       node("epic", { issue_type: "epic" }),
       node("child", { parent: "epic" }),
@@ -279,14 +279,17 @@ describe("deriveGraph hierarchy", () => {
     ];
     const g = deriveGraph(nodes, []);
 
-    expect(g.orphans).toContain("loner");
-    expect(g.orphans).not.toContain("child");
+    // Deliberately includes the epic: `parentless` is not "standalone work".
+    // A surface wanting that sense must narrow it, as the tree view does.
+    expect(g.parentless).toContain("loner");
+    expect(g.parentless).toContain("epic");
+    expect(g.parentless).not.toContain("child");
   });
 
-  it("orphans a bead whose declared parent is not in the node set", () => {
+  it("treats a bead whose declared parent is missing as parentless", () => {
     const g = deriveGraph([node("a", { parent: "missing-epic" })], []);
 
-    expect(g.orphans).toEqual(["a"]);
+    expect(g.parentless).toEqual(["a"]);
     expect(g.nodes.a.parent).toBeUndefined();
   });
 });

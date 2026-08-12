@@ -33,6 +33,8 @@ interface AppState {
   selectedBeadId: string | null;
   /** Surface that caused the current selection; drives reveal-vs-stay. */
   selectionOrigin: string | null;
+  /** Bumped by beads.findInGraph; any change moves focus into the find field. */
+  findRequests: number;
   summary: BeadsSummary | null;
   graph: BeadsGraphModel | null;
   loading: boolean;
@@ -48,6 +50,7 @@ const initialState: AppState = {
   selectedBead: null,
   selectedBeadId: null,
   selectionOrigin: null,
+  findRequests: 0,
   summary: null,
   graph: null,
   loading: true,
@@ -90,6 +93,9 @@ export function App(): React.ReactElement {
         break;
       case "setGraph":
         setState((prev) => ({ ...prev, graph: message.graph }));
+        break;
+      case "focusGraphFind":
+        setState((prev) => ({ ...prev, findRequests: prev.findRequests + 1 }));
         break;
       case "setLoading":
         setState((prev) => ({ ...prev, loading: message.loading }));
@@ -204,6 +210,7 @@ export function App(): React.ReactElement {
           <GraphView
             beads={visibleBeads}
             graph={state.graph}
+            focusFindToken={state.findRequests}
             loading={state.loading}
             error={state.error}
             selectedBeadId={state.selectedBeadId}

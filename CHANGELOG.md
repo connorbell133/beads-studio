@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency cycles reported in the Problems panel
 - "unblocks N" leverage and per-epic critical path
 - One bead selection shared across every surface, plus command-palette entries for ready work, the graph, find-in-graph, and tree mode
+- Tree mode for the Issues list, with an Orphans lane and child-completion rollup on epic rows
+- DAG legibility at scale: find-in-graph, fit-to-selection, hover chain isolation, density auto-collapse above 150 nodes, and edge-following keyboard traversal
 - Keyboard navigation for graph and lane surfaces, and a visible focus state throughout
 
 ### Fixed

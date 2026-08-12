@@ -26,6 +26,8 @@ interface GraphViewProps {
   loading: boolean;
   error: string | null;
   selectedBeadId: string | null;
+  /** Bumped by the beads.findInGraph command; any change focuses find. */
+  focusFindToken?: number;
   onSelectBead: (beadId: string) => void;
   onRetry: () => void;
 }
@@ -36,6 +38,7 @@ export function GraphView({
   loading,
   error,
   selectedBeadId,
+  focusFindToken,
   onSelectBead,
   onRetry,
 }: GraphViewProps): React.ReactElement {
@@ -115,6 +118,7 @@ export function GraphView({
         graph={graph}
         focusId={selectedBeadId}
         selectedBeadId={selectedBeadId}
+        focusFindToken={focusFindToken}
         onSelectBead={onSelectBead}
       />
 

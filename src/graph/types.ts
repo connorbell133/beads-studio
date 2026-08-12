@@ -56,8 +56,12 @@ export interface BeadsGraphModel {
   ready: string[];
   /** Open work with at least one open blocker, id-ordered. */
   blocked: string[];
-  /** Beads with no resolvable parent. */
-  orphans: string[];
+  /**
+   * Beads with no resolvable parent - which includes every top-level epic, not
+   * only standalone work. A surface wanting "orphans" in the colloquial sense
+   * (parentless AND childless) must narrow this; see tree.ts.
+   */
+  parentless: string[];
   /** Each dependency cycle, as the ids tangled in it. */
   cycles: string[][];
   hasCycle: boolean;

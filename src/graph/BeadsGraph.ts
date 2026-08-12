@@ -73,7 +73,7 @@ export function deriveGraph(
   const nodes: Record<string, BeadGraphNode> = {};
   const ready: string[] = [];
   const blocked: string[] = [];
-  const orphans: string[] = [];
+  const parentless: string[] = [];
 
   for (const raw of inputNodes) {
     const id = raw.id;
@@ -112,14 +112,14 @@ export function deriveGraph(
 
     nodes[id] = node;
     if (isWork && isOpen) (isReady ? ready : blocked).push(id);
-    if (!parent) orphans.push(id);
+    if (!parent) parentless.push(id);
   }
 
   return {
     nodes,
     ready,
     blocked,
-    orphans,
+    parentless,
     cycles,
     hasCycle: cycles.length > 0,
     complete: options.complete ?? false,
