@@ -67,7 +67,7 @@ export function deriveGraph(
   const cycles = findCycles(ids, blockedBy);
   const inCycle = new Set(cycles.flat());
   const rank = computeRanks(ids, blockedBy, blocksFor, byId, inCycle);
-  const leverage = computeLeverage(ids, blocksFor);
+  const leverage = computeLeverage(ids, blocksFor, isClosed);
   const { parentOf, childrenOf } = resolveHierarchy(inputNodes, inputEdges, byId);
 
   const nodes: Record<string, BeadGraphNode> = {};
@@ -267,26 +267,38 @@ function byPriorityThenCreated(a: GraphInputNode, b: GraphInputNode): number {
  * How many beads each bead's closure would unblock, counted transitively and
  * deduplicated across shared descendants.
  *
+ * Closed dependents are traversed but not counted. An edge from an
+ * already-closed bead is still a real edge - it can lead on to open work
+ * further down the chain - but closing its blocker unblocks nothing for the
+ * closed bead itself, so counting it would inflate the number the ready lane
+ * sorts on.
+ *
  * A breadth-first walk per bead. That is O(nodes x edges) in the worst case,
  * which stays comfortable at backlog scale and avoids holding a reachable set
  * per node in memory.
  */
-function computeLeverage(ids: string[], blocksFor: Map<string, string[]>): Map<string, number> {
+function computeLeverage(
+  ids: string[],
+  blocksFor: Map<string, string[]>,
+  isClosed: (id: string) => boolean
+): Map<string, number> {
   const leverage = new Map<string, number>();
 
   for (const start of ids) {
     const seen = new Set<string>();
     const queue = [...(blocksFor.get(start) ?? [])];
     let head = 0;
+    let unblocked = 0;
     while (head < queue.length) {
       const id = queue[head++];
       if (id === start || seen.has(id)) continue;
       seen.add(id);
+      if (!isClosed(id)) unblocked++;
       for (const next of blocksFor.get(id) ?? []) {
         if (!seen.has(next)) queue.push(next);
       }
     }
-    leverage.set(start, seen.size);
+    leverage.set(start, unblocked);
   }
 
   return leverage;

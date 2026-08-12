@@ -10,6 +10,7 @@
 import React from "react";
 import {
   Bead,
+  BeadsGraphModel,
   BeadsProject,
   BeadsSummary,
   BeadStatus,
@@ -21,6 +22,7 @@ import { Loading } from "../common/Loading";
 import { ProjectDropdown } from "../common/ProjectDropdown";
 import { Dropdown, DropdownItem } from "../common/Dropdown";
 import { StatusBadge } from "../common/StatusBadge";
+import { ReadyLane } from "./ReadyLane";
 import { PriorityBadge } from "../common/PriorityBadge";
 import { LabelBadge } from "../common/LabelBadge";
 import { getLabelColorStyle } from "../utils/label-colors";
@@ -28,6 +30,9 @@ import { getLabelColorStyle } from "../utils/label-colors";
 interface DashboardViewProps {
   summary: BeadsSummary | null;
   beads: Bead[];
+  /** Null until the first derive lands. */
+  graph: BeadsGraphModel | null;
+  selectedBeadId: string | null;
   loading: boolean;
   error: string | null;
   projects: BeadsProject[];
@@ -45,6 +50,8 @@ interface DashboardViewProps {
 export function DashboardView({
   summary,
   beads,
+  graph,
+  selectedBeadId,
   loading,
   error,
   projects,
@@ -58,8 +65,6 @@ export function DashboardView({
   onOpenProjectFolder,
   onRetry,
 }: DashboardViewProps): React.ReactElement {
-  const openBeads = beads.filter((b) => b.status === "open").slice(0, 5);
-  const blockedBeads = beads.filter((b) => b.status === "blocked").slice(0, 5);
   const inProgressBeads = beads.filter((b) => b.status === "in_progress").slice(0, 5);
   const topLabels = Array.from(
     beads.reduce((acc, bead) => {
@@ -206,32 +211,27 @@ export function DashboardView({
             </div>
           )}
 
-          <div className="work-sections compact">
-            {openBeads.length > 0 && (
-              <div className="work-section open compact">
-                <h3>Open</h3>
-                <ul className="bead-list">
-                  {openBeads.map((bead) => <BeadListItem key={bead.id} bead={bead} onSelectBead={onSelectBead} />)}
-                </ul>
-              </div>
-            )}
-            {inProgressBeads.length > 0 && (
-              <div className="work-section in-progress compact">
-                <h3>In Progress</h3>
-                <ul className="bead-list">
-                  {inProgressBeads.map((bead) => <BeadListItem key={bead.id} bead={bead} onSelectBead={onSelectBead} />)}
-                </ul>
-              </div>
-            )}
-            {blockedBeads.length > 0 && (
-              <div className="work-section blocked compact">
-                <h3>Blocked</h3>
-                <ul className="bead-list">
-                  {blockedBeads.map((bead) => <BeadListItem key={bead.id} bead={bead} onSelectBead={onSelectBead} />)}
-                </ul>
-              </div>
-            )}
-          </div>
+          <ReadyLane
+            beads={beads}
+            graph={graph}
+            loading={loading}
+            error={error}
+            operation="Loading beads"
+            selectedId={selectedBeadId}
+            onSelectBead={onSelectBead}
+            onRetry={onRetry}
+          />
+
+          {inProgressBeads.length > 0 && (
+            <div className="work-section in-progress compact">
+              <h3>In Progress</h3>
+              <ul className="bead-list">
+                {inProgressBeads.map((bead) => (
+                  <BeadListItem key={bead.id} bead={bead} onSelectBead={onSelectBead} />
+                ))}
+              </ul>
+            </div>
+          )}
         </>
       )}
     </div>

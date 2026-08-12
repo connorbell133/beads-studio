@@ -151,6 +151,8 @@ export function App(): React.ReactElement {
           <DashboardView
             summary={state.summary}
             beads={visibleBeads}
+            graph={state.graph}
+            selectedBeadId={state.selectedBeadId}
             loading={state.loading}
             error={state.error}
             projects={state.projects}

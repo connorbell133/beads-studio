@@ -206,6 +206,30 @@ describe("deriveGraph leverage", () => {
 
     expect(g.nodes.a.leverage).toBe(0);
   });
+
+  it("does not count an already-closed dependent", () => {
+    // Regression: closing X cannot unblock D when D is already closed, but the
+    // edge still existed so it inflated the number the ready lane sorts on.
+    const g = deriveGraph(
+      [node("x"), node("d", { status: "closed" })],
+      [blocks("d", "x")]
+    );
+
+    expect(g.nodes.x.leverage).toBe(0);
+  });
+
+  it("stops the chain at a closed dependent, which no longer blocks anything", () => {
+    // end depends on mid, and mid is closed - so end is already unblocked and
+    // nothing x does can change that. The chain genuinely ends at a closed
+    // bead, because a closed blocker stops blocking.
+    const g = deriveGraph(
+      [node("x"), node("mid", { status: "closed" }), node("end")],
+      [blocks("mid", "x"), blocks("end", "mid")]
+    );
+
+    expect(g.nodes.x.leverage).toBe(0);
+    expect(g.nodes.end.ready).toBe(true);
+  });
 });
 
 describe("deriveGraph hierarchy", () => {

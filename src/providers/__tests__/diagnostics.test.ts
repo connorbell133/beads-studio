@@ -1,9 +1,15 @@
 import * as vscode from "vscode";
-import {
-  createdDiagnosticCollections,
-  Diagnostic,
-  FakeDiagnosticCollection,
-} from "../../__mocks__/vscode";
+import type { Diagnostic, FakeDiagnosticCollection } from "../../__mocks__/vscode";
+
+// Read the recorder through the same specifier the code under test uses.
+// Importing "../../__mocks__/vscode" for a *value* can resolve to a second
+// module instance: jest only dedupes the two specifiers when another suite
+// instantiated the module first in the same worker, so the assertions would
+// pass or fail on worker assignment. Types are erased, so importing those
+// from the path directly is safe.
+const { createdDiagnosticCollections } = vscode as unknown as {
+  createdDiagnosticCollections: FakeDiagnosticCollection[];
+};
 import { BeadsProject } from "../../backend/types";
 import { deriveGraph } from "../../graph/BeadsGraph";
 import { BeadsGraphModel } from "../../graph/types";

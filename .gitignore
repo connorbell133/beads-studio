@@ -23,3 +23,10 @@ opencode.json
 
 # Agent worktrees created by Claude Code subagents
 .claude/worktrees/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*
