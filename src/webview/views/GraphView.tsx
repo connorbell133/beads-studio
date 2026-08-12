@@ -1,11 +1,13 @@
 /**
  * GraphView - the dependency graph in an editor tab.
  *
- * This is the text layer: an adjacency list naming each bead and its blockers.
- * It is not a fallback bolted on after the picture - it is the accessible
- * representation the SVG layer will sit on top of, so a screen reader gets the
- * same relationships a sighted user reads off the diagram. A DAG that exists
- * only as <path> elements conveys nothing to assistive technology.
+ * Two layers over one model. GraphCanvas draws the laid-out DAG; the adjacency
+ * list below names every bead and its blockers as real text.
+ *
+ * The list is not a fallback bolted on after the picture. A DAG that exists
+ * only as <path> elements conveys nothing to assistive technology, so the list
+ * is the accessible representation and stays reachable - collapsed on large
+ * graphs to keep the picture the first thing you see, never hidden.
  */
 
 import React, { useMemo } from "react";
@@ -15,6 +17,7 @@ import { TypeIcon } from "../common/TypeIcon";
 import { Loading } from "../common/Loading";
 import { ErrorMessage } from "../common/ErrorMessage";
 import { useRovingFocus } from "../hooks/useRovingFocus";
+import { GraphCanvas } from "./GraphCanvas";
 
 interface GraphViewProps {
   beads: Bead[];
@@ -106,6 +109,22 @@ export function GraphView({
         )}
       </header>
 
+      <GraphCanvas
+        beads={beads}
+        graph={graph}
+        focusId={selectedBeadId}
+        selectedBeadId={selectedBeadId}
+        onSelectBead={onSelectBead}
+      />
+
+      <details className="graph-adjacency-disclosure" open={ordered.length <= 25}>
+        <summary>
+          Blockers as a list
+          <span className="graph-adjacency-hint">
+            keyboard navigable, and what a screen reader reads
+          </span>
+        </summary>
+
       <ul
         className="graph-adjacency"
         aria-label="Beads and their blockers"
@@ -171,6 +190,7 @@ export function GraphView({
           );
         })}
       </ul>
+      </details>
     </div>
   );
 }

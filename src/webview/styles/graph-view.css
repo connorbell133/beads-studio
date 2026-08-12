@@ -1,0 +1,31 @@
+/* The adjacency layer's disclosure.
+ *
+ * Open by default on graphs small enough to read whole, collapsed above that so
+ * the picture leads - but always present, because this is the representation a
+ * screen reader gets. */
+.graph-adjacency-disclosure {
+  margin-top: var(--spacing-lg);
+  border-top: 1px solid var(--vscode-panel-border);
+  padding-top: var(--spacing-sm);
+}
+
+.graph-adjacency-disclosure > summary {
+  cursor: pointer;
+  padding: var(--spacing-xs) 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  list-style-position: outside;
+}
+
+.graph-adjacency-disclosure > summary:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.graph-adjacency-hint {
+  margin-left: var(--spacing-sm);
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
