@@ -34,7 +34,7 @@ Two MCP options, both verified working (2026-07):
 claude-in-chrome caveats:
 - Needs extension site permission for `127.0.0.1`
 - Extension host logs do NOT appear in page console — read from disk instead:
-  `~/.local/share/code-server/logs/<session>/exthost*/connorbell133.beads-ui/Beads.log`
+  `~/.local/share/code-server/logs/<session>/exthost*/connorbell133.beads-studio/Beads.log`
 
 ## Workspace Trust (gotcha)
 
@@ -171,13 +171,13 @@ Extension installed via symlink to pick up changes on reload:
 
 ```bash
 # Location (from project root)
-~/.local/share/code-server/extensions/connorbell133.beads-ui-dev -> $(pwd)
+~/.local/share/code-server/extensions/connorbell133.beads-studio-dev -> $(pwd)
 
 # Create or REPOINT the symlink (-n is required — see warning below)
-ln -sfn "$(pwd)" ~/.local/share/code-server/extensions/connorbell133.beads-ui-dev
+ln -sfn "$(pwd)" ~/.local/share/code-server/extensions/connorbell133.beads-studio-dev
 
 # Always read back — the link is global, but worktrees are not
-readlink ~/.local/share/code-server/extensions/connorbell133.beads-ui-dev
+readlink ~/.local/share/code-server/extensions/connorbell133.beads-studio-dev
 ```
 
 > **Multiple worktrees share one symlink.** It points at whichever worktree set
@@ -249,7 +249,7 @@ Use manual builds when watch mode isn't running or after major changes (new file
 ## Troubleshooting
 
 ### Testing the wrong checkout (worktrees)
-`readlink ~/.local/share/code-server/extensions/connorbell133.beads-ui-dev` must point at the
+`readlink ~/.local/share/code-server/extensions/connorbell133.beads-studio-dev` must point at the
 checkout you are editing. `ln -sf` on an existing symlink-to-directory writes the new link
 *inside* the old target instead of replacing it — use `ln -sfn` (the start script now does).
 

@@ -165,7 +165,7 @@ jobs:
           files: "*.vsix"
           generate_release_notes: false
           body: |
-            See [CHANGELOG.md](https://github.com/connorbell133/vscode-beads/blob/main/CHANGELOG.md) for release notes.
+            See [CHANGELOG.md](https://github.com/connorbell133/beads-studio/blob/main/CHANGELOG.md) for release notes.
           draft: false
 ```
 
@@ -204,15 +204,15 @@ Note: `ovsx` takes the VSIX file directly, while `vsce publish` packages and pub
 Add marketplace badges to README:
 
 ```markdown
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/connorbell133.beads-ui?label=VS%20Code)](https://marketplace.visualstudio.com/items?itemName=connorbell133.beads-ui)
-[![Open VSX](https://img.shields.io/open-vsx/v/connorbell133/beads-ui?label=Open%20VSX)](https://open-vsx.org/extension/connorbell133/beads-ui)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/connorbell133.beads-studio?label=VS%20Code)](https://marketplace.visualstudio.com/items?itemName=connorbell133.beads-studio)
+[![Open VSX](https://img.shields.io/open-vsx/v/connorbell133/beads-studio?label=Open%20VSX)](https://open-vsx.org/extension/connorbell133/beads-studio)
 ```
 
 ## Verification
 
 After the first release with Open VSX publishing:
 
-1. Check [open-vsx.org/extension/connorbell133/beads-ui](https://open-vsx.org/extension/connorbell133/beads-ui)
+1. Check [open-vsx.org/extension/connorbell133/beads-studio](https://open-vsx.org/extension/connorbell133/beads-studio)
 2. Have a Cursor user search for "Beads" in extensions
 3. Verify version matches VS Code Marketplace version
 4. Confirm verified badge appears (after ownership claim is approved)

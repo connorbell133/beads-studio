@@ -1,17 +1,17 @@
 <div align="center">
 
-<img src="resources/icon.png" alt="Beads UI" width="120">
+<img src="resources/icon.png" alt="Beads Studio" width="120">
 
-# Beads UI
+# Beads Studio
 
 **Mission control for [Beads](https://github.com/gastownhall/beads) — the issue tracker built for AI coding agents.**
 
-[![CI](https://github.com/connorbell133/vscode-beads/actions/workflows/ci.yml/badge.svg)](https://github.com/connorbell133/vscode-beads/actions/workflows/ci.yml)
+[![CI](https://github.com/connorbell133/beads-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/connorbell133/beads-studio/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-22c55e)](LICENSE)
 
 [Install](#install) · [Why](#why) · [Features](#features) · [Quick start](#quick-start) · [Beads CLI ↗](https://github.com/gastownhall/beads)
 
-<img src="docs/images/beads-ui-demo.gif" alt="Beads UI in VS Code — pulse dashboard and dependency graph" width="850">
+<img src="docs/images/beads-ui-demo.gif" alt="Beads Studio in VS Code — pulse dashboard and dependency graph" width="850">
 
 </div>
 
@@ -21,7 +21,7 @@
 
 Your agents file issues, chain dependencies, and close out work in `bd` faster than you can read `bd list`. Beads stores the plan as a **dependency graph** — but a graph in a terminal is a wall of text.
 
-Beads UI puts that graph on screen, live, inside VS Code:
+Beads Studio puts that graph on screen, live, inside VS Code:
 
 - **See the whole DAG** — every bead, every blocker, every epic, drawn as the graph it actually is
 - **Know what's ready** — the unblocked frontier, ranked by how much each pick-up unblocks
@@ -62,10 +62,10 @@ Auto-detects every `.beads` directory in your workspace. Projects on a Dolt SQL 
 
 ## Install
 
-Search **"Beads UI"** in VS Code / Cursor / VSCodium extensions, or:
+Search **"Beads Studio"** in VS Code / Cursor / VSCodium extensions, or:
 
-- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=connorbell133.beads-ui)
-- [Open VSX](https://open-vsx.org/extension/connorbell133/beads-ui)
+- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=connorbell133.beads-studio)
+- [Open VSX](https://open-vsx.org/extension/connorbell133/beads-studio)
 
 **Requirements:** VS Code 1.85+, [`bd` CLI](https://github.com/gastownhall/beads) 1.0.5+ in PATH.
 
@@ -99,7 +99,7 @@ PRs welcome. Start with [docs/development.md](docs/development.md) — `bun inst
 
 <div align="center">
 
-**If Beads UI helps you see what your agents are up to, [a star](https://github.com/connorbell133/vscode-beads/stargazers) helps others find it. ⭐**
+**If Beads Studio helps you see what your agents are up to, [a star](https://github.com/connorbell133/beads-studio/stargazers) helps others find it. ⭐**
 
 Built with ❤️ and [Claude Code](https://claude.ai/code) · Originally forked from [jdillon/vscode-beads](https://github.com/jdillon/vscode-beads) (Apache 2.0), since substantially rewritten
 

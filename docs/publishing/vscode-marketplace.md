@@ -104,14 +104,14 @@ vsce publish major  # 0.1.0 → 1.0.0
 vsce ls                              # List files that will be packaged
 vsce package                         # Create VSIX locally
 vsce publish                         # Publish to marketplace
-vsce unpublish connorbell133.beads-ui # Remove from marketplace
+vsce unpublish connorbell133.beads-studio # Remove from marketplace
 ```
 
 ## README on the Listing
 
 `vsce package` copies README.md **markup** into the VSIX, so wording, layout and
 `<img width>` attributes only reach the listing on the next publish. Relative
-image links are rewritten to `https://github.com/connorbell133/vscode-beads/raw/HEAD/<path>`
+image links are rewritten to `https://github.com/connorbell133/beads-studio/raw/HEAD/<path>`
 and fetched live from the default branch.
 
 Consequence: renaming or deleting an image that the *published* README references
@@ -133,7 +133,7 @@ Adds a verified checkmark next to your publisher name on the marketplace.
 
 ## Links
 
-- [Extension URL](https://marketplace.visualstudio.com/items?itemName=connorbell133.beads-ui)
+- [Extension URL](https://marketplace.visualstudio.com/items?itemName=connorbell133.beads-studio)
 - [Publisher Management](https://marketplace.visualstudio.com/manage/publishers/connorbell133)
 - [Publishing Extensions Docs](https://code.visualstudio.com/api/working-with-extensions/publishing-extension)
 - [vsce CLI Reference](https://github.com/microsoft/vscode-vsce)

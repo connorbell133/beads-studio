@@ -73,5 +73,5 @@ jobs:
           files: "*.vsix"
           generate_release_notes: false
           body: |
-            See [CHANGELOG.md](https://github.com/connorbell133/vscode-beads/blob/main/CHANGELOG.md) for release notes.
+            See [CHANGELOG.md](https://github.com/connorbell133/beads-studio/blob/main/CHANGELOG.md) for release notes.
           draft: false

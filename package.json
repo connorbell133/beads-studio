@@ -1,6 +1,6 @@
 {
-  "name": "beads-ui",
-  "displayName": "Beads UI",
+  "name": "beads-studio",
+  "displayName": "Beads Studio",
   "description": "Dashboard, kanban board, and dependency graph for the Beads (bd) issue tracker",
   "version": "1.0.0",
   "publisher": "connorbell133",
@@ -19,11 +19,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/connorbell133/vscode-beads"
+    "url": "https://github.com/connorbell133/beads-studio"
   },
-  "homepage": "https://github.com/connorbell133/vscode-beads#readme",
+  "homepage": "https://github.com/connorbell133/beads-studio#readme",
   "bugs": {
-    "url": "https://github.com/connorbell133/vscode-beads/issues"
+    "url": "https://github.com/connorbell133/beads-studio/issues"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -142,7 +142,7 @@
       ]
     },
     "configuration": {
-      "title": "Beads UI",
+      "title": "Beads Studio",
       "properties": {
         "beads.pathToBd": {
           "type": "string",

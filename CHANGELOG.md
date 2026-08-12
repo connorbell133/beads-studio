@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Rebranded to **Beads UI** (`connorbell133.beads-ui`): new publisher, new original logo replacing the Flaticon-derived icon, repository moved to [connorbell133/vscode-beads](https://github.com/connorbell133/vscode-beads) (vsbeads-nft)
+- Rebranded to **Beads Studio** (`connorbell133.beads-studio`): new publisher, new original logo replacing the Flaticon-derived icon, repository moved to [connorbell133/beads-studio](https://github.com/connorbell133/beads-studio) (vsbeads-nft)
 - Graph lenses simplified: the Epics roll-up lens is gone (orphan top-level beads belong to All beads), the per-epic lens is renamed Epics and is now the default view, and over-dense graphs collapse to one epic instead of the roll-up (vsbeads-cfe)
 - On the Epics lens the anchor epic is drawn as the goal — accent hue, heavier outline, "goal" flag and its closed count — instead of wearing ready's green (vsbeads-oea)
 - Issues list redesigned in the style of Linear, mapped to beads-native objects (vsbeads-cgu, vsbeads-a9c, vsbeads-mkq, vsbeads-55o, vsbeads-fmn): rows are priority glyph · bead id · status ring · type icon · title · blocked-by/blocking chips from the dependency graph, grouped under their epic with sticky collapsible headers and a "No epic" group; status and priority are edited in place from the row; epic progress is a ring with the fraction on hover; labels, updated time, and assignee appear as the panel affords them, title first. Replaces the table and tree modes and their column chrome (headers, resizing, drag-reorder, show/hide menu)
