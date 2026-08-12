@@ -5,7 +5,7 @@
  */
 
 import { deriveGraph } from "../BeadsGraph";
-import { applyLens, DEFAULT_LENS, GRAPH_LENSES, LensBead } from "../lens";
+import { applyLens, chooseInitialLens, DEFAULT_LENS, GRAPH_LENSES, LensBead } from "../lens";
 import type { BeadsGraphModel, GraphInputEdge, GraphInputNode } from "../types";
 
 const raw = (id: string, over: Partial<GraphInputNode> = {}): GraphInputNode => ({
@@ -495,5 +495,68 @@ describe("lens purity", () => {
     const result = applyLens(model, beads, { lens: "full", hiddenTypes: [] });
 
     expect(ids(result)).toEqual(["a", "g"]);
+  });
+});
+
+describe("chooseInitialLens", () => {
+  it("opens on the rollup when the rollup has something to draw", () => {
+    const { model, beads } = build(
+      [
+        raw("e1", { issue_type: "epic" }),
+        raw("e2", { issue_type: "epic" }),
+        raw("t1", { parent: "e1" }),
+        raw("t2", { parent: "e2" }),
+      ],
+      [blocks("t2", "t1")]
+    );
+
+    expect(chooseInitialLens(model, beads)).toBe("epic-rollup");
+  });
+
+  it("falls through to the full graph when every edge lives inside one epic", () => {
+    // The shape that made the default view four disconnected dots on a project
+    // with real sequencing: one epic, all its members blocking each other.
+    const { model, beads } = build(
+      [
+        raw("e1", { issue_type: "epic" }),
+        raw("a", { parent: "e1" }),
+        raw("b", { parent: "e1" }),
+        raw("c", { parent: "e1" }),
+      ],
+      [blocks("b", "a"), blocks("c", "b")]
+    );
+
+    expect(chooseInitialLens(model, beads)).toBe("full");
+  });
+
+  it("stays on the rollup when there are no blocking links anywhere", () => {
+    // Nothing to show either way, so keep the readable default rather than
+    // dumping every bead on screen.
+    const { model, beads } = build([raw("a"), raw("b"), raw("c")]);
+
+    expect(chooseInitialLens(model, beads)).toBe("epic-rollup");
+  });
+
+  it("ignores containment when deciding - a tether is not sequencing", () => {
+    const { model, beads } = build(
+      [raw("e1", { issue_type: "epic" }), raw("a", { parent: "e1" })],
+      [{ from: "a", to: "e1", type: "parent-child" }]
+    );
+
+    expect(chooseInitialLens(model, beads)).toBe("epic-rollup");
+  });
+
+  it("does not count an edge whose blocker has closed", () => {
+    // A resolved blocker is not sequencing anyone any more.
+    const { model, beads } = build(
+      [
+        raw("e1", { issue_type: "epic" }),
+        raw("a", { parent: "e1", status: "closed" }),
+        raw("b", { parent: "e1" }),
+      ],
+      [blocks("b", "a")]
+    );
+
+    expect(chooseInitialLens(model, beads)).toBe("epic-rollup");
   });
 });

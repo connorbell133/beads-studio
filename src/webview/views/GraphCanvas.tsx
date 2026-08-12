@@ -60,6 +60,7 @@ import { icons } from "../icons";
 import { GraphToolbar } from "../common/GraphToolbar";
 import {
   applyLens,
+  chooseInitialLens,
   DEFAULT_LENS,
   GraphLens,
   LENS_LABELS,
@@ -154,7 +155,11 @@ export function GraphCanvas({
   focusFindToken,
   className,
 }: GraphCanvasProps): React.ReactElement {
-  const [ownLens, setOwnLens] = useState<GraphLens>(DEFAULT_LENS);
+  // Chosen once from the data rather than fixed, so a project whose every edge
+  // sits inside one epic does not open on a view with nothing in it.
+  const [ownLens, setOwnLens] = useState<GraphLens>(() =>
+    graph ? chooseInitialLens(graph, beads) : DEFAULT_LENS
+  );
   const requestedLens = lens ?? ownLens;
 
   /** Set once the user has read the density notice and asked for it anyway. */
@@ -564,7 +569,16 @@ export function GraphCanvas({
       )}
 
       {edges.length === 0 || !viewBox ? (
-        <EmptyCanvas lens={drawnLens} nodeCount={nodes.length} anchored={Boolean(anchor)} />
+        <EmptyCanvas
+          lens={drawnLens}
+          nodeCount={nodes.length}
+          anchored={Boolean(anchor)}
+          hiddenByLens={
+            graph
+              ? Object.values(graph.nodes).reduce((n, node) => n + node.blockedBy.length, 0)
+              : 0
+          }
+        />
       ) : (
         <svg
           ref={svgRef}
@@ -897,10 +911,13 @@ function EmptyCanvas({
   lens,
   nodeCount,
   anchored,
+  hiddenByLens,
 }: {
   lens: GraphLens;
   nodeCount: number;
   anchored: boolean;
+  /** Blocking links the model has that this lens did not draw. */
+  hiddenByLens: number;
 }): React.ReactElement {
   if (lens === "blast-radius" && !anchored) {
     return (
@@ -916,6 +933,24 @@ function EmptyCanvas({
         <p>Nothing to draw at this lens.</p>
         <p className="graph-canvas-empty-hint">
           Switch to <strong>{LENS_LABELS.full}</strong> to see every bead.
+        </p>
+      </div>
+    );
+  }
+
+  // A project whose every edge sits inside one epic has real dependencies that
+  // this lens rolled away. Telling that user to run `bd dep add` is wrong twice
+  // over: the links exist, and the fix is a different lens.
+  if (hiddenByLens > 0 && lens !== "full") {
+    return (
+      <div className="graph-canvas-empty">
+        <p>
+          {hiddenByLens} blocking {hiddenByLens === 1 ? "link" : "links"}, all inside a single
+          epic.
+        </p>
+        <p className="graph-canvas-empty-hint">
+          Rolled-up epics hide the sequencing within them. Switch to{" "}
+          <strong>{LENS_LABELS.full}</strong> to see it.
         </p>
       </div>
     );

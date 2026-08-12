@@ -125,6 +125,28 @@ export interface LensResult {
   omitted: number;
 }
 
+/**
+ * The lens to open on for a given project.
+ *
+ * The rollup is the right default - a readable dozen nodes beats a hairball -
+ * but it drops edges that live inside one epic, and a project that is one epic
+ * with internal sequencing has *every* edge dropped. Opening on a view that
+ * draws four disconnected dots, on a project with real dependencies, teaches
+ * the user the graph is broken.
+ *
+ * So: prefer the rollup, but fall through to the full graph when the rollup has
+ * nothing to draw and the full graph does. Density still governs from there -
+ * this picks the most informative lens, not an unreadable one.
+ */
+export function chooseInitialLens(model: BeadsGraphModel, beads: LensBead[]): GraphLens {
+  const rollup = applyLens(model, beads, { lens: DEFAULT_LENS });
+  if (rollup.edges.some((edge) => edge.kind === "blocks")) {
+    return DEFAULT_LENS;
+  }
+  const full = applyLens(model, beads, { lens: "full" });
+  return full.edges.some((edge) => edge.kind === "blocks") ? "full" : DEFAULT_LENS;
+}
+
 export interface LensOptions {
   lens: GraphLens;
   /** Anchor for `blast-radius`. Without one, that lens has nothing to draw. */
