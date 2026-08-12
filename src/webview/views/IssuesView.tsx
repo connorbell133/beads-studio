@@ -1,14 +1,9 @@
 /**
  * IssuesView
  *
- * Main table/list view for issues using TanStack Table v8.
- * Features:
- * - Multi-column sorting (shift+click for secondary sort)
- * - Column resizing
- * - Column reordering (drag & drop)
- * - Faceted filtering with counts
- * - Column visibility toggle
- * - State persistence (sort order, column visibility, column order survive reloads)
+ * The Issues surface: a Linear-style list (LinearList) grouped by epic, plus
+ * the kanban board. TanStack Table stays underneath purely as the filter,
+ * search, and facet engine — presentation belongs to LinearList.
  */
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
@@ -16,17 +11,15 @@ import { createPortal } from "react-dom";
 import {
   useReactTable,
   getCoreRowModel,
-  getSortedRowModel,
   getFilteredRowModel,
   getFacetedRowModel,
   getFacetedUniqueValues,
-  flexRender,
   createColumnHelper,
   ColumnFiltersState,
-  ColumnResizeMode,
 } from "@tanstack/react-table";
 import {
   Bead,
+  BeadsGraphModel,
   BeadStatus,
   BeadPriority,
   BeadType,
@@ -38,99 +31,85 @@ import {
   TYPE_COLORS,
   TYPE_SORT_ORDER,
   getTypeSortOrder,
-  sortLabels,
   vscode,
 } from "../types";
+import { projectKeyFor } from "../../graph/tree";
 import { StatusBadge } from "../common/StatusBadge";
 import { PriorityBadge } from "../common/PriorityBadge";
 import { TypeBadge } from "../common/TypeBadge";
-import { TypeIcon } from "../common/TypeIcon";
 import { LabelBadge } from "../common/LabelBadge";
 import { FilterChip } from "../common/FilterChip";
-import { Table, Kanban } from "lucide-react";
+import { Kanban, List } from "lucide-react";
 import { ErrorMessage } from "../common/ErrorMessage";
 import { Loading } from "../common/Loading";
 import { Dropdown, DropdownItem } from "../common/Dropdown";
-import { Timestamp, timestampSortingFn } from "../common/Timestamp";
 import { AutocompleteInput, AutocompleteOption } from "../common/AutocompleteInput";
 import { Markdown } from "../common/Markdown";
 import { getLabelColorStyle } from "../utils/label-colors";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { useColumnState } from "../hooks/useColumnState";
+import { FILTER_PRESETS, presetStatuses } from "../common/filter-presets";
 import { KanbanBoard } from "./KanbanBoard";
+import { LinearList } from "./LinearList";
 
 interface IssuesViewProps {
   beads: Bead[];
+  /**
+   * The derived graph, when the host has sent one. Tree mode reads hierarchy
+   * from here rather than hydrating each bead's dependencies; without it the
+   * panel stays in flat list mode and the tree toggle is disabled.
+   */
+  graph?: BeadsGraphModel | null;
   loading: boolean;
   error: string | null;
   selectedBeadId: string | null;
+  /** External preset request (dashboard stat strip); a bump re-applies it. */
+  presetId?: string | null;
+  presetRequests?: number;
   tooltipHoverDelay: number; // 0 = disabled
   onSelectBead: (beadId: string) => void;
   onUpdateBead: (beadId: string, updates: Partial<Bead>) => void;
   onRetry: () => void;
 }
 
+type ViewMode = "list" | "board";
+
+const VIEW_MODES: readonly ViewMode[] = ["list", "board"];
+
 // Issue types sorted by TYPE_SORT_ORDER (epic first)
 const ISSUE_TYPES = Object.keys(TYPE_SORT_ORDER).sort(
   (a, b) => getTypeSortOrder(a) - getTypeSortOrder(b)
 );
 
-// Custom sorting function for type columns (epic first)
-const typeSortingFn = (rowA: { getValue: (id: string) => unknown }, rowB: { getValue: (id: string) => unknown }) => {
-  const a = getTypeSortOrder(rowA.getValue("type") as string | undefined);
-  const b = getTypeSortOrder(rowB.getValue("type") as string | undefined);
-  return a - b;
-};
-
-// Filter presets
-interface FilterPreset {
-  id: string;
-  label: string;
-  statuses: BeadStatus[];
-}
-
-const FILTER_PRESETS: FilterPreset[] = [
-  { id: "all", label: "All", statuses: [] },
-  { id: "not-closed", label: "Not Closed", statuses: ["open", "in_progress", "blocked", "deferred", "pinned", "hooked"] },
-  { id: "active", label: "Active", statuses: ["in_progress", "blocked", "hooked"] },
-  { id: "blocked", label: "Blocked", statuses: ["blocked"] },
-  { id: "closed", label: "Closed", statuses: ["closed"] },
-];
-
 const DEFAULT_PRESET_ID = "not-closed";
-
-const presetStatuses = (id: string): BeadStatus[] =>
-  FILTER_PRESETS.find((p) => p.id === id)?.statuses ?? [];
 
 const columnHelper = createColumnHelper<Bead>();
 
 export function IssuesView({
   beads,
+  graph,
   loading,
   error,
   selectedBeadId,
+  presetId = null,
+  presetRequests = 0,
   tooltipHoverDelay,
   onSelectBead,
   onUpdateBead,
   onRetry,
 }: IssuesViewProps): React.ReactElement {
-  // Persisted column state (sorting, visibility, order)
-  const defaultVisibility = {
-    labels: false,
-    assignee: false,
-    estimate: false,
-  };
+  // The webview is not told the project id, so the bead-id prefix stands in for
+  // it. Group expansion is a per-project fact and must not cross over.
+  const projectKey = useMemo(() => projectKeyFor(beads), [beads]);
   const {
-    sorting,
-    setSorting,
-    columnVisibility,
-    setColumnVisibility,
-    columnOrder,
-    setColumnOrder,
-    resetVisibility,
+    viewMode: persistedViewMode,
+    setViewMode,
+    expanded,
+    setExpanded,
   } = useColumnState({
-    defaultSorting: [{ id: "updatedAt", desc: true }],
-    defaultVisibility,
+    defaultViewMode: "list",
+    viewModes: VIEW_MODES,
+    projectKey,
   });
 
   // Non-persisted TanStack state
@@ -141,19 +120,33 @@ export function IssuesView({
     { id: "status", value: presetStatuses(DEFAULT_PRESET_ID) },
   ]);
   const [globalFilter, setGlobalFilter] = useState("");
-  const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
-  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
-  const [isResizing, setIsResizing] = useState(false);
+
+  // Live width of the list, so right-side meta hiding tracks the panel as the
+  // user drags the sidebar. A callback ref survives the wrapper mounting and
+  // unmounting across view-mode switches.
+  const [tableWidth, setTableWidth] = useState<number | null>(null);
+  const widthObserverRef = useRef<ResizeObserver | null>(null);
+  const tableWrapperRef = useCallback((node: HTMLDivElement | null) => {
+    widthObserverRef.current?.disconnect();
+    widthObserverRef.current = null;
+    if (!node) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width !== undefined) setTableWidth(width);
+    });
+    observer.observe(node);
+    widthObserverRef.current = observer;
+  }, []);
 
   // UI state
-  const [viewMode, setViewMode] = useState<"table" | "board">("table");
+  const viewMode = persistedViewMode as ViewMode;
   const [activePreset, setActivePreset] = useState<string>(DEFAULT_PRESET_ID);
-  const [filterBarOpen, setFilterBarOpen] = useState(true);
+  // Closed until asked for: the preset dropdown lives in the toolbar, so the
+  // second row only exists when there are custom chips to show.
+  const [filterBarOpen, setFilterBarOpen] = useState(false);
   const [filterMenuOpen, setFilterMenuOpen] = useState<string | null>(null);
-  const [columnMenuOpen, setColumnMenuOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const filterMenuRef = useRef<HTMLDivElement>(null);
-  const columnMenuRef = useRef<HTMLTableCellElement>(null);
 
   // Tooltip state
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
@@ -166,7 +159,7 @@ export function IssuesView({
     return beads.find((b) => b.id === hoveredRowId);
   }, [hoveredRowId, beads]);
 
-  const handleRowMouseEnter = useCallback((e: React.MouseEvent<HTMLTableRowElement>, beadId: string) => {
+  const handleRowMouseEnter = useCallback((e: React.MouseEvent<HTMLElement>, beadId: string) => {
     // Skip if tooltips are disabled
     if (tooltipHoverDelay === 0) return;
 
@@ -226,78 +219,27 @@ export function IssuesView({
 
   // Click outside to close menus
   useClickOutside(filterMenuRef, () => setFilterMenuOpen(null), !!filterMenuOpen);
-  useClickOutside(columnMenuRef, () => setColumnMenuOpen(false), columnMenuOpen);
 
-  // Column definitions
+  // Column definitions. Nothing here renders — LinearList owns presentation —
+  // but each filterable field needs a column so filterFns and facet counts
+  // keep one source of truth.
   const columns = useMemo(
     () => [
       columnHelper.accessor("type", {
-        id: "icon",
-        header: "",
-        size: 28,
-        minSize: 28,
-        maxSize: 28,
-        enableResizing: false,
-        cell: (info) =>
-          info.getValue() ? (
-            <TypeIcon type={info.getValue() as BeadType} size={16} />
-          ) : null,
-        sortingFn: typeSortingFn,
-      }),
-      columnHelper.accessor("type", {
-        header: "Type",
-        size: 70,
-        minSize: 30,
-        cell: (info) =>
-          info.getValue() ? (
-            <TypeBadge type={info.getValue() as BeadType} size="small" />
-          ) : null,
-        sortingFn: typeSortingFn,
+        id: "type",
         filterFn: (row, columnId, filterValue: string[]) => {
           if (!filterValue || filterValue.length === 0) return true;
           const val = row.getValue(columnId) as string | undefined;
           return val !== undefined && filterValue.includes(val);
         },
       }),
-      columnHelper.accessor("title", {
-        header: "Title",
-        size: 200,
-        minSize: 100,
-        cell: (info) => (
-          <>
-            <span
-              className={`bead-id ${copiedId === info.row.original.id ? "copied" : ""}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCopyId(info.row.original.id);
-                onSelectBead(info.row.original.id);
-              }}
-              title={copiedId === info.row.original.id ? "Copied!" : "Click to copy"}
-            >
-              {info.row.original.id}
-            </span>
-            <span className="bead-title">{info.getValue()}</span>
-          </>
-        ),
-      }),
       columnHelper.accessor("status", {
-        header: "Status",
-        size: 80,
-        minSize: 30,
-        cell: (info) => <StatusBadge status={info.getValue()} size="small" />,
         filterFn: (row, columnId, filterValue: BeadStatus[]) => {
           if (!filterValue || filterValue.length === 0) return true;
           return filterValue.includes(row.getValue(columnId));
         },
       }),
       columnHelper.accessor("priority", {
-        header: "Priority",
-        size: 70,
-        minSize: 30,
-        cell: (info) =>
-          info.getValue() !== undefined ? (
-            <PriorityBadge priority={info.getValue()!} size="small" />
-          ) : null,
         filterFn: (row, columnId, filterValue: BeadPriority[]) => {
           if (!filterValue || filterValue.length === 0) return true;
           const val = row.getValue(columnId) as BeadPriority | undefined;
@@ -305,17 +247,6 @@ export function IssuesView({
         },
       }),
       columnHelper.accessor("labels", {
-        header: "Labels",
-        size: 100,
-        minSize: 30,
-        enableSorting: false,
-        cell: (info) => (
-          <>
-            {sortLabels(info.getValue()).map((label) => (
-              <LabelBadge key={label} label={label} />
-            ))}
-          </>
-        ),
         filterFn: (row, columnId, filterValue: string[]) => {
           if (!filterValue || filterValue.length === 0) return true;
           const labels = row.getValue(columnId) as string[] | undefined;
@@ -328,10 +259,6 @@ export function IssuesView({
         },
       }),
       columnHelper.accessor("assignee", {
-        header: "Assignee",
-        size: 80,
-        minSize: 30,
-        cell: (info) => info.getValue() || "-",
         filterFn: (row, columnId, filterValue: string[]) => {
           if (!filterValue || filterValue.length === 0) return true;
           const val = row.getValue(columnId) as string | undefined;
@@ -342,46 +269,19 @@ export function IssuesView({
           return val !== undefined && filterValue.includes(val);
         },
       }),
-      columnHelper.accessor("estimatedMinutes", {
-        id: "estimate",
-        header: "Estimate",
-        size: 70,
-        minSize: 30,
-        cell: (info) => (info.getValue() ? `${info.getValue()}m` : "-"),
-      }),
-      columnHelper.accessor("updatedAt", {
-        header: "Updated",
-        size: 80,
-        minSize: 30,
-        cell: (info) => <Timestamp value={info.getValue()} format="auto" />,
-        sortingFn: timestampSortingFn,
-      }),
-      columnHelper.accessor("createdAt", {
-        header: "Created",
-        size: 80,
-        minSize: 30,
-        cell: (info) => <Timestamp value={info.getValue()} format="auto" />,
-        sortingFn: timestampSortingFn,
-      }),
     ],
-    [copiedId]
+    []
   );
 
   const table = useReactTable({
     data: beads,
     columns,
     state: {
-      sorting,
       columnFilters,
       globalFilter,
-      columnVisibility,
-      columnOrder,
     },
-    onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
-    onColumnVisibilityChange: setColumnVisibility,
-    onColumnOrderChange: setColumnOrder,
     globalFilterFn: (row, _columnId, filterValue: string) => {
       const search = filterValue.toLowerCase();
       const bead = row.original;
@@ -393,13 +293,16 @@ export function IssuesView({
       );
     },
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
-    columnResizeMode: "onChange" as ColumnResizeMode,
-    enableColumnResizing: true,
   });
+
+  // The one place filtering, faceting and counting happen. LinearList reads
+  // its match set from here rather than re-deciding the predicate, so the
+  // list and the counts can never disagree about what a filter means.
+  const filteredRows = table.getFilteredRowModel().rows;
+  const matched = useMemo(() => filteredRows.map((row) => row.original.id), [filteredRows]);
 
   const handleCopyId = useCallback((beadId: string) => {
     vscode.postMessage({ type: "copyBeadId", beadId });
@@ -414,6 +317,15 @@ export function IssuesView({
   const assigneeFilter = (columnFilters.find((f) => f.id === "assignee")?.value || []) as string[];
   const labelFilter = (columnFilters.find((f) => f.id === "labels")?.value || []) as string[];
   const hasActiveFilters = statusFilter.length > 0 || priorityFilter.length > 0 || typeFilter.length > 0 || assigneeFilter.length > 0 || labelFilter.length > 0;
+  // Filters beyond the preset — the chips the user placed themselves. The
+  // preset already reads from its dropdown; re-stating it as six chips cost
+  // two rows of panel.
+  const hasCustomFilters =
+    (activePreset === "" && statusFilter.length > 0) ||
+    priorityFilter.length > 0 ||
+    typeFilter.length > 0 ||
+    assigneeFilter.length > 0 ||
+    labelFilter.length > 0;
 
   const applyPreset = (presetId: string) => {
     const preset = FILTER_PRESETS.find((p) => p.id === presetId);
@@ -426,6 +338,12 @@ export function IssuesView({
       setActivePreset(presetId);
     }
   };
+
+  // An external request (the dashboard's stat strip) applies a preset the same
+  // way a toolbar click would; the request counter makes repeats re-apply.
+  useEffect(() => {
+    if (presetRequests > 0 && presetId) applyPreset(presetId);
+  }, [presetRequests]);
 
   const addStatusFilter = (status: BeadStatus) => {
     if (!statusFilter.includes(status)) {
@@ -543,7 +461,7 @@ export function IssuesView({
     setActivePreset("all");
   };
 
-  const filteredCount = table.getFilteredRowModel().rows.length;
+  const filteredCount = filteredRows.length;
   const totalCount = beads.length;
 
   // Get faceted counts for filters (counts based on OTHER active filters, not this column)
@@ -552,9 +470,8 @@ export function IssuesView({
   const typeFacets = table.getColumn("type")?.getFacetedUniqueValues() ?? new Map();
   const assigneeFacets = table.getColumn("assignee")?.getFacetedUniqueValues() ?? new Map();
 
-  // Unfiltered counts per status (for kanban empty state messaging).
-  // Tallies every status present, including custom ones, so board columns for
-  // non-built-in statuses still get an accurate "n/N" count.
+  // Unfiltered counts per status (for kanban empty-state messaging). Tallies
+  // every status present, including custom ones.
   const unfilteredStatusCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const bead of beads) {
@@ -652,8 +569,25 @@ export function IssuesView({
             </button>
           )}
         </div>
+        <Dropdown
+          trigger={FILTER_PRESETS.find((p) => p.id === activePreset)?.label || "Custom"}
+          className="preset-dropdown"
+          triggerClassName="preset-dropdown-btn"
+          menuClassName="preset-dropdown-menu"
+        >
+          {FILTER_PRESETS.map((preset) => (
+            <DropdownItem
+              key={preset.id}
+              className="preset-option"
+              active={activePreset === preset.id}
+              onClick={() => applyPreset(preset.id)}
+            >
+              {preset.label}
+            </DropdownItem>
+          ))}
+        </Dropdown>
         <button
-          className={`filter-toggle ${filterBarOpen || hasActiveFilters ? "active" : ""}`}
+          className={`filter-toggle ${filterBarOpen || hasCustomFilters ? "active" : ""}`}
           onClick={() => setFilterBarOpen(!filterBarOpen)}
           title="Filter"
         >
@@ -663,11 +597,11 @@ export function IssuesView({
         </button>
         <div className="view-toggle">
           <button
-            className={viewMode === "table" ? "active" : ""}
-            onClick={() => setViewMode("table")}
-            title="Table view"
+            className={viewMode === "list" ? "active" : ""}
+            onClick={() => setViewMode("list")}
+            title="List view"
           >
-            <Table size={14} />
+            <List size={14} />
           </button>
           <button
             className={viewMode === "board" ? "active" : ""}
@@ -679,36 +613,19 @@ export function IssuesView({
         </div>
       </div>
 
-      {/* Row 2: Filter bar */}
-      {(filterBarOpen || hasActiveFilters) && (
+      {/* Row 2: custom filter chips. The preset speaks through its dropdown in
+          the toolbar; chips here are only what the user added beyond it. */}
+      {(filterBarOpen || hasCustomFilters) && (
         <div className="filter-bar">
-          <Dropdown
-            trigger={FILTER_PRESETS.find((p) => p.id === activePreset)?.label || "Custom"}
-            className="preset-dropdown"
-            triggerClassName="preset-dropdown-btn"
-            menuClassName="preset-dropdown-menu"
-          >
-            {FILTER_PRESETS.map((preset) => (
-              <DropdownItem
-                key={preset.id}
-                className="preset-option"
-                active={activePreset === preset.id}
-                onClick={() => applyPreset(preset.id)}
-              >
-                {preset.label}
-              </DropdownItem>
+          {activePreset === "" &&
+            statusFilter.map((status) => (
+              <FilterChip
+                key={`status-${status}`}
+                label={STATUS_LABELS[status] ?? status}
+                accentColor={STATUS_COLORS[status] ?? UNKNOWN_STATUS_COLOR}
+                onRemove={() => removeStatusFilter(status)}
+              />
             ))}
-          </Dropdown>
-
-          {/* Active filter chips */}
-          {statusFilter.map((status) => (
-            <FilterChip
-              key={`status-${status}`}
-              label={STATUS_LABELS[status] ?? status}
-              accentColor={STATUS_COLORS[status] ?? UNKNOWN_STATUS_COLOR}
-              onRemove={() => removeStatusFilter(status)}
-            />
-          ))}
           {priorityFilter.map((priority) => (
             <FilterChip
               key={`priority-${priority}`}
@@ -729,7 +646,7 @@ export function IssuesView({
             <FilterChip
               key={`assignee-${assignee}`}
               label={assignee === "__unassigned__" ? "Unassigned" : assignee}
-              accentColor="#6b7280"
+              accentColor={UNKNOWN_STATUS_COLOR}
               onRemove={() => removeAssigneeFilter(assignee)}
             />
           ))}
@@ -737,7 +654,7 @@ export function IssuesView({
             <FilterChip
               key={`label-${label}`}
               label={label === "__unlabeled__" ? "Unlabeled" : label}
-              accentColor={label === "__unlabeled__" ? "#6b7280" : getLabelColorStyle(label).backgroundColor}
+              accentColor={label === "__unlabeled__" ? UNKNOWN_STATUS_COLOR : getLabelColorStyle(label).backgroundColor}
               onRemove={() => removeLabelFilter(label)}
             />
           ))}
@@ -861,7 +778,7 @@ export function IssuesView({
             )}
           </div>
 
-          {hasActiveFilters && (
+          {hasCustomFilters && (
             <button className="filter-reset" onClick={clearAllFilters}>
               Clear
             </button>
@@ -877,175 +794,31 @@ export function IssuesView({
         />
       )}
 
-      {/* Table */}
-      {!error && viewMode === "table" && (
-        <div className="beads-table-wrapper">
+      {/* The Linear-style list, grouped by epic */}
+      {!error && viewMode === "list" && (
+        <div className="beads-table-wrapper" ref={tableWrapperRef}>
           {loading && (
             <div className="issues-loading-state">
               <Loading />
             </div>
           )}
-          <div className={`beads-table-container ${table.getState().columnSizingInfo.isResizingColumn ? "resizing" : ""}`}>
-            <table
-              className="beads-table"
-              style={{ minWidth: table.getCenterTotalSize() }}
-              onContextMenu={(e) => e.preventDefault()}
-            >
-              <thead>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <tr key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <th
-                        key={header.id}
-                        style={{ width: header.getSize() }}
-                        className={`${header.column.getCanSort() ? "sortable" : ""} ${draggedColumn === header.id ? "dragging" : ""} ${dragOverColumn === header.id && draggedColumn !== header.id ? "drag-over" : ""}`}
-                        onClick={header.column.getToggleSortingHandler()}
-                        draggable={!isResizing}
-                        onDragStart={(e) => {
-                          if (isResizing) {
-                            e.preventDefault();
-                            return;
-                          }
-                          setDraggedColumn(header.id);
-                          e.dataTransfer.effectAllowed = "move";
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = "move";
-                          if (draggedColumn && draggedColumn !== header.id) {
-                            setDragOverColumn(header.id);
-                          }
-                        }}
-                        onDragLeave={() => {
-                          setDragOverColumn(null);
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          if (draggedColumn && draggedColumn !== header.id) {
-                            const currentOrder = table.getAllLeafColumns().map((c) => c.id);
-                            const dragIdx = currentOrder.indexOf(draggedColumn);
-                            const dropIdx = currentOrder.indexOf(header.id);
-                            const newOrder = [...currentOrder];
-                            newOrder.splice(dragIdx, 1);
-                            newOrder.splice(dropIdx, 0, draggedColumn);
-                            setColumnOrder(newOrder);
-                          }
-                          setDraggedColumn(null);
-                          setDragOverColumn(null);
-                        }}
-                        onDragEnd={() => {
-                          setDraggedColumn(null);
-                          setDragOverColumn(null);
-                        }}
-                      >
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                        {header.column.getIsSorted() && (
-                          <span className="sort-indicator">
-                            {header.column.getIsSorted() === "asc" ? "▲" : "▼"}
-                          </span>
-                        )}
-                        <span
-                          className="resize-handle"
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            setIsResizing(true);
-                            const resizeHandler = header.getResizeHandler();
-                            resizeHandler(e);
-                            // Clear resizing state on mouseup
-                            const handleMouseUp = () => {
-                              setIsResizing(false);
-                              document.removeEventListener("mouseup", handleMouseUp);
-                            };
-                            document.addEventListener("mouseup", handleMouseUp);
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            setIsResizing(true);
-                            const resizeHandler = header.getResizeHandler();
-                            resizeHandler(e);
-                            const handleTouchEnd = () => {
-                              setIsResizing(false);
-                              document.removeEventListener("touchend", handleTouchEnd);
-                            };
-                            document.addEventListener("touchend", handleTouchEnd);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </th>
-                    ))}
-                    <th className="col-menu-th" ref={columnMenuRef}>
-                      <button
-                        className="col-menu-btn"
-                        onClick={() => setColumnMenuOpen(!columnMenuOpen)}
-                        title="Show/hide columns"
-                      >
-                        ⋮
-                      </button>
-                      {columnMenuOpen && (
-                        <div className="col-menu">
-                          {table.getAllLeafColumns().map((column) => (
-                            <label key={column.id}>
-                              <input
-                                type="checkbox"
-                                checked={column.getIsVisible()}
-                                onChange={column.getToggleVisibilityHandler()}
-                              />
-                              {typeof column.columnDef.header === "string"
-                                ? column.columnDef.header
-                                : column.id}
-                            </label>
-                          ))}
-                          <hr className="col-menu-divider" />
-                          <button
-                            className="col-menu-reset"
-                            onClick={() => {
-                              resetVisibility();
-                              setColumnMenuOpen(false);
-                            }}
-                          >
-                            Reset to defaults
-                          </button>
-                        </div>
-                      )}
-                    </th>
-                  </tr>
-                ))}
-              </thead>
-              <tbody>
-                {table.getRowModel().rows.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={table.getVisibleLeafColumns().length + 1}
-                      className="empty-row"
-                    >
-                      {loading ? "Loading..." : "No issues matching filter"}
-                    </td>
-                  </tr>
-                ) : (
-                  table.getRowModel().rows.map((row) => (
-                    <tr
-                      key={row.id}
-                      onClick={() => onSelectBead(row.original.id)}
-                      className={`bead-row ${row.original.id === selectedBeadId ? "selected" : ""}`}
-                      onMouseEnter={(e) => handleRowMouseEnter(e, row.original.id)}
-                      onMouseLeave={handleRowMouseLeave}
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <td
-                          key={cell.id}
-                          className={`${cell.column.id}-cell`}
-                          style={{ width: cell.column.getSize() }}
-                        >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      ))}
-                      <td className="row-spacer" />
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <LinearList
+            beads={beads}
+            graph={graph ?? null}
+            matched={matched}
+            width={tableWidth}
+            selectedBeadId={selectedBeadId}
+            copiedId={copiedId}
+            expanded={expanded}
+            setExpanded={setExpanded}
+            forceOpen={!!globalFilter}
+            emptyText={loading ? "Loading..." : "No issues matching filter"}
+            onSelectBead={onSelectBead}
+            onUpdateBead={onUpdateBead}
+            onCopyId={handleCopyId}
+            onRowMouseEnter={handleRowMouseEnter}
+            onRowMouseLeave={handleRowMouseLeave}
+          />
           {/* Filtered count overlay */}
           {(hasActiveFilters || globalFilter) && filteredCount !== totalCount && (
             <div className="filter-count-overlay">

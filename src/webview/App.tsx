@@ -5,11 +5,13 @@
  * Manages global state and message passing with the extension.
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Bead,
+  BeadsGraphModel,
   BeadsProject,
   BeadsSummary,
+  COORDINATION_TYPES,
   ExtensionMessage,
   WebviewSettings,
   vscode,
@@ -17,6 +19,7 @@ import {
 import { DashboardView } from "./views/DashboardView";
 import { IssuesView } from "./views/IssuesView";
 import { DetailsView } from "./views/DetailsView";
+import { GraphView } from "./views/GraphView";
 import { Loading } from "./common/Loading";
 import { NoProject } from "./common/NoProject";
 import { ToastProvider, triggerToast } from "./common/Toast";
@@ -28,7 +31,17 @@ interface AppState {
   beads: Bead[];
   selectedBead: Bead | null;
   selectedBeadId: string | null;
+  /** Surface that caused the current selection; drives reveal-vs-stay. */
+  selectionOrigin: string | null;
+  /** Bumped by beads.findInGraph; any change moves focus into the find field. */
+  findRequests: number;
+  /** Set by the dashboard's stat strip; any bump re-applies the preset. */
+  issuesPresetId: string | null;
+  issuesPresetRequests: number;
+  /** When ids became ready, recorded by the dashboard provider across loads. */
+  pulseEvents: { id: string; at: number }[];
   summary: BeadsSummary | null;
+  graph: BeadsGraphModel | null;
   loading: boolean;
   error: string | null;
   settings: WebviewSettings;
@@ -41,7 +54,13 @@ const initialState: AppState = {
   beads: [],
   selectedBead: null,
   selectedBeadId: null,
+  selectionOrigin: null,
+  findRequests: 0,
+  issuesPresetId: null,
+  issuesPresetRequests: 0,
+  pulseEvents: [],
   summary: null,
+  graph: null,
   loading: true,
   error: null,
   settings: { renderMarkdown: true, userId: "", tooltipHoverDelay: 1000 },
@@ -58,6 +77,16 @@ export function App(): React.ReactElement {
       case "setViewType":
         setState((prev) => ({ ...prev, viewType: message.viewType }));
         break;
+      case "applyIssuesPreset":
+        setState((prev) => ({
+          ...prev,
+          issuesPresetId: message.presetId,
+          issuesPresetRequests: prev.issuesPresetRequests + 1,
+        }));
+        break;
+      case "setPulse":
+        setState((prev) => ({ ...prev, pulseEvents: message.events }));
+        break;
       case "setProject":
         setState((prev) => ({ ...prev, project: message.project }));
         break;
@@ -71,10 +100,20 @@ export function App(): React.ReactElement {
         setState((prev) => ({ ...prev, selectedBead: message.bead }));
         break;
       case "setSelectedBeadId":
-        setState((prev) => ({ ...prev, selectedBeadId: (message as { type: "setSelectedBeadId"; beadId: string | null }).beadId }));
+        setState((prev) => ({
+          ...prev,
+          selectedBeadId: message.beadId,
+          selectionOrigin: message.origin ?? null,
+        }));
         break;
       case "setSummary":
         setState((prev) => ({ ...prev, summary: message.summary }));
+        break;
+      case "setGraph":
+        setState((prev) => ({ ...prev, graph: message.graph }));
+        break;
+      case "focusGraphFind":
+        setState((prev) => ({ ...prev, findRequests: prev.findRequests + 1 }));
         break;
       case "setLoading":
         setState((prev) => ({ ...prev, loading: message.loading }));
@@ -106,6 +145,15 @@ export function App(): React.ReactElement {
     };
   }, [handleMessage]);
 
+  // Coordination beads reach the webview so the graph is complete and future
+  // surfaces (a gate lane, a human inbox) can render them. They are filtered
+  // once here rather than per view, so adding a view cannot leak them by
+  // omission - and so this is the only line to change when a surface wants them.
+  const visibleBeads = useMemo(
+    () => state.beads.filter((bead) => !COORDINATION_TYPES.includes(bead.type as never)),
+    [state.beads]
+  );
+
   // Render the appropriate view
   const renderView = () => {
       // Discovery finished without a project: show how to fix it, not a spinner (#76)
@@ -117,7 +165,7 @@ export function App(): React.ReactElement {
         return <NoProject />;
       }
 
-      if (state.viewType === "beadsPanel" && state.loading && state.beads.length === 0) {
+      if (state.viewType === "beadsPanel" && state.loading && visibleBeads.length === 0) {
         return <Loading />;
       }
 
@@ -126,7 +174,10 @@ export function App(): React.ReactElement {
         return (
           <DashboardView
             summary={state.summary}
-            beads={state.beads}
+            beads={visibleBeads}
+            pulseEvents={state.pulseEvents}
+            graph={state.graph}
+            selectedBeadId={state.selectedBeadId}
             loading={state.loading}
             error={state.error}
             projects={state.projects}
@@ -146,6 +197,10 @@ export function App(): React.ReactElement {
             onStopDolt={() => vscode.postMessage({ type: "stopDoltServer" })}
             onOpenDoltLog={() => vscode.postMessage({ type: "openDoltLog" })}
             onOpenProjectFolder={() => vscode.postMessage({ type: "openProjectFolder" })}
+            onOpenIssuesPreset={(presetId) =>
+              vscode.postMessage({ type: "openIssuesPreset", presetId })
+            }
+            onOpenGraph={() => vscode.postMessage({ type: "openGraph" })}
             onRetry={() =>
               vscode.postMessage({ type: "refresh" })
             }
@@ -155,10 +210,13 @@ export function App(): React.ReactElement {
       case "beadsPanel":
         return (
           <IssuesView
-            beads={state.beads}
+            beads={visibleBeads}
+            graph={state.graph}
             loading={state.loading}
             error={state.error}
             selectedBeadId={state.selectedBeadId}
+            presetId={state.issuesPresetId}
+            presetRequests={state.issuesPresetRequests}
             tooltipHoverDelay={state.settings.tooltipHoverDelay}
             onSelectBead={(beadId) =>
               vscode.postMessage({ type: "openBeadDetails", beadId })
@@ -169,6 +227,22 @@ export function App(): React.ReactElement {
             onRetry={() =>
               vscode.postMessage({ type: "refresh" })
             }
+          />
+        );
+
+      case "beadsGraph":
+        return (
+          <GraphView
+            beads={visibleBeads}
+            graph={state.graph}
+            focusFindToken={state.findRequests}
+            loading={state.loading}
+            error={state.error}
+            selectedBeadId={state.selectedBeadId}
+            onSelectBead={(beadId) =>
+              vscode.postMessage({ type: "openBeadDetails", beadId })
+            }
+            onRetry={() => vscode.postMessage({ type: "refresh" })}
           />
         );
 
@@ -185,7 +259,7 @@ export function App(): React.ReactElement {
         }
         // Extract unique assignees from beads list
         const knownAssignees = Array.from(
-          new Set(state.beads.map((b) => b.assignee).filter((a): a is string => !!a))
+          new Set(visibleBeads.map((b) => b.assignee).filter((a): a is string => !!a))
         ).sort();
         return (
           <DetailsView

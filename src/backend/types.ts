@@ -1,3 +1,5 @@
+import type { BeadsGraphModel } from "../graph/types";
+
 /**
  * Beads - TypeScript Data Models
  *
@@ -131,6 +133,153 @@ export interface BackendBeadDependency {
   priority?: number;
 }
 
+/**
+ * A dependency entry as it arrives on the wire, in either shape.
+ *
+ * `bd show --json` emits BackendBeadDependency: the far endpoint plus enough
+ * metadata to render it. `bd list --json` emits ListWireDependency: both
+ * endpoints and nothing else. Typing these as the same thing is what let the
+ * list payload's edges silently normalize to `{ id: undefined }`.
+ */
+export type RawDependency = BackendBeadDependency | ListWireDependency;
+
+/** The `bd list --json` dependency shape. Both endpoints, no display metadata. */
+export interface ListWireDependency {
+  issue_id: string;
+  depends_on_id: string;
+  type?: string;
+  created_at?: string;
+  created_by?: string;
+  metadata?: string;
+}
+
+/**
+ * A dependency edge between two beads, normalized from either wire shape.
+ *
+ * Direction is fixed once here and inherited by every consumer:
+ * `from` is the dependent side, `to` is the thing it depends on. That matches
+ * `bd dep add <from_id> <to_id>`, so a `blocks` edge reads as "from is blocked
+ * by to". See docs/reference/beads-dependency-model.md.
+ *
+ * Unlike BeadDependency this carries no title/status/priority - the bulk edge
+ * set names endpoints only, and consumers look the endpoints up in the node set.
+ */
+export interface BeadEdge {
+  from: string;
+  to: string;
+  /** blocks | parent-child | related | discovered-from, or a bd custom type. */
+  type: string;
+}
+
+/**
+ * Which array a `bd show` dependency entry came from. That shape names only the
+ * far end of the edge, so the array it sat in supplies the direction. The
+ * `bd list` shape carries both endpoints and ignores this.
+ */
+export type EdgeDirection = "dependency" | "dependent";
+
+/**
+ * A `blocks` edge is the fail-safe default for an entry with no type.
+ *
+ * Readiness may over-report blocked but must never over-report ready, so an
+ * untyped edge is treated as a blocker rather than dropped or downgraded to a
+ * non-gating type. bd always emits a type in practice; this covers the case
+ * where a future wire change or a hand-edited payload does not.
+ */
+const DEFAULT_EDGE_TYPE = "blocks";
+
+function edgeType(raw: unknown): string {
+  const value = typeof raw === "string" ? raw.trim() : "";
+  return value || DEFAULT_EDGE_TYPE;
+}
+
+function edgeEndpoint(raw: unknown): string {
+  return typeof raw === "string" && raw.trim() ? raw.trim() : "";
+}
+
+/**
+ * Normalizes one raw dependency entry into a BeadEdge.
+ *
+ * Two wire shapes reach this function and they disagree about everything except
+ * the concept:
+ *
+ *   `bd list --json` -> { issue_id, depends_on_id, type }  both endpoints named
+ *   `bd show --json` -> { id, dependency_type }            only the far end
+ *
+ * The list shape wins when present because it is self-describing. Otherwise
+ * `ownerId` supplies the near end and `direction` orients the edge.
+ *
+ * Returns null when an endpoint is missing. A half-edge is worse than no edge:
+ * it cannot be resolved against the node set, so it would silently become an
+ * unknown blocker on every derivation.
+ */
+export function normalizeEdge(
+  ownerId: string,
+  raw: unknown,
+  direction: EdgeDirection = "dependency"
+): BeadEdge | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const entry = raw as Record<string, unknown>;
+
+  // `bd list` shape: both endpoints are explicit, so direction is irrelevant.
+  const listFrom = edgeEndpoint(entry.issue_id);
+  const listTo = edgeEndpoint(entry.depends_on_id);
+  if (listFrom && listTo) {
+    return { from: listFrom, to: listTo, type: edgeType(entry.type ?? entry.dependency_type) };
+  }
+
+  // `bd show` shape: the entry names the far end, the owner is the near end.
+  const farEnd = edgeEndpoint(entry.id);
+  const nearEnd = edgeEndpoint(ownerId);
+  if (!farEnd || !nearEnd) {
+    return null;
+  }
+  const type = edgeType(entry.dependency_type ?? entry.type);
+  return direction === "dependency"
+    ? { from: nearEnd, to: farEnd, type }
+    : { from: farEnd, to: nearEnd, type };
+}
+
+/** Every edge carried inline on one raw issue, from both dependency arrays. */
+export function edgesFromIssue(raw: {
+  id?: string;
+  dependencies?: unknown[];
+  dependents?: unknown[];
+}): BeadEdge[] {
+  const ownerId = typeof raw.id === "string" ? raw.id : "";
+  const edges: BeadEdge[] = [];
+  for (const entry of raw.dependencies ?? []) {
+    const edge = normalizeEdge(ownerId, entry, "dependency");
+    if (edge) edges.push(edge);
+  }
+  for (const entry of raw.dependents ?? []) {
+    const edge = normalizeEdge(ownerId, entry, "dependent");
+    if (edge) edges.push(edge);
+  }
+  return edges;
+}
+
+/**
+ * The deduplicated edge set across a whole list payload.
+ *
+ * Deduplication matters because `bd show` payloads name the same edge from both
+ * ends, and because a complete list read reaches a shared blocker from every
+ * bead that depends on it.
+ */
+export function edgesFromIssues(
+  issues: Array<{ id?: string; dependencies?: unknown[]; dependents?: unknown[] }>
+): BeadEdge[] {
+  const seen = new Map<string, BeadEdge>();
+  for (const issue of issues) {
+    for (const edge of edgesFromIssue(issue)) {
+      seen.set(`${edge.from}\u0000${edge.to}\u0000${edge.type}`, edge);
+    }
+  }
+  return [...seen.values()];
+}
+
 // Represents a Beads project (database/workspace)
 export interface BeadsProject {
   id: string; // Stable ID (hash of db path or root path)
@@ -161,7 +310,11 @@ export interface BackendProcessInfo {
   [key: string]: unknown;
 }
 
-// Summary statistics for dashboard
+// Summary statistics for dashboard.
+//
+// readyCount and blockedCount are graph-derived (see src/graph/summary.ts), not
+// tallies of the `open` and `blocked` status labels. In beads, ready means open
+// AND free of open blockers - that is the entire purpose of the blocks edge.
 export interface BeadsSummary {
   total: number;
   // Keyed by string: custom statuses are unbounded, so this is not a total map
@@ -171,6 +324,8 @@ export interface BeadsSummary {
   readyCount: number;
   blockedCount: number;
   inProgressCount: number;
+  /** The node set was partial, so blockedCount may over-report. */
+  degraded: boolean;
 }
 
 // Settings that can be passed to webview
@@ -180,11 +335,6 @@ export interface WebviewSettings {
   tooltipHoverDelay: number; // 0 = disabled
 }
 
-// Placeholder for graph view (not yet implemented)
-export interface DependencyGraph {
-  nodes: Bead[];
-  edges: { from: string; to: string; type: DependencyType }[];
-}
 
 // Messages sent from extension to webview
 export type ExtensionToWebviewMessage =
@@ -192,9 +342,13 @@ export type ExtensionToWebviewMessage =
   | { type: "setProject"; project: BeadsProject | null }
   | { type: "setBeads"; beads: Bead[] }
   | { type: "setBead"; bead: Bead | null }
-  | { type: "setSelectedBeadId"; beadId: string | null }
+  | { type: "setSelectedBeadId"; beadId: string | null; origin?: string }
+  | { type: "focusGraphFind" }
+  | { type: "toggleTreeMode" }
+  | { type: "applyIssuesPreset"; presetId: string }
+  | { type: "setPulse"; events: { id: string; at: number }[] }
   | { type: "setSummary"; summary: BeadsSummary | null }
-  | { type: "setGraph"; graph: DependencyGraph }
+  | { type: "setGraph"; graph: BeadsGraphModel }
   | { type: "setProjects"; projects: BeadsProject[] }
   | { type: "setLoading"; loading: boolean }
   | { type: "setError"; error: string | null }
@@ -221,7 +375,9 @@ export type WebviewToExtensionMessage =
   | { type: "openBeadDetails"; beadId: string }
   | { type: "viewInGraph"; beadId: string }
   | { type: "copyBeadId"; beadId: string }
-  | { type: "openFile"; filePath: string; line?: number };
+  | { type: "openFile"; filePath: string; line?: number }
+  | { type: "openIssuesPreset"; presetId: string }
+  | { type: "openGraph" };
 
 // CLI command result
 export interface CommandResult<T = unknown> {
@@ -317,59 +473,30 @@ export function normalizePriority(
 }
 
 /**
- * Converts a raw bead object from CLI JSON to internal Bead type.
- * Returns null if status is invalid (bead will be skipped).
+ * The display-ready subset of a raw dependency array.
+ *
+ * Only the `bd show` shape carries the title/status/priority the details panel
+ * renders; the `bd list` shape names endpoints and nothing else. Entries without
+ * a usable `id` are dropped rather than rendered as blank rows - before this
+ * filter, every list-shaped entry produced a `{ id: undefined }` dependency.
+ * The relationship itself is not lost: bulk edges come from edgesFromIssues.
  */
-export function normalizeBead(raw: Record<string, unknown>): Bead | null {
-  const status = normalizeStatus(raw.status as string | undefined);
-  if (status === null) {
-    return null;
+function hydrateDependencies(raw: RawDependency[] | undefined): BeadDependency[] | undefined {
+  if (!raw) return undefined;
+  const hydrated: BeadDependency[] = [];
+  for (const entry of raw) {
+    const d = entry as BackendBeadDependency;
+    if (typeof d.id !== "string" || !d.id) continue;
+    hydrated.push({
+      id: d.id,
+      type: d.issue_type,
+      dependencyType: d.dependency_type as DependencyType | undefined,
+      title: d.title,
+      status: d.status ? normalizeStatus(d.status) ?? undefined : undefined,
+      priority: d.priority !== undefined ? normalizePriority(d.priority) : undefined,
+    });
   }
-  return {
-    id: String(raw.id || raw.ID || ""),
-    title: String(raw.title || raw.Title || raw.summary || "Untitled"),
-    description: raw.description
-      ? String(raw.description)
-      : raw.body
-        ? String(raw.body)
-        : undefined,
-    type: raw.type ? String(raw.type) : raw.category ? String(raw.category) : undefined,
-    priority: normalizePriority(raw.priority as number | string | undefined),
-    status,
-    assignee: raw.assignee
-      ? String(raw.assignee)
-      : raw.assigned_to
-        ? String(raw.assigned_to)
-        : undefined,
-    labels: Array.isArray(raw.labels)
-      ? raw.labels.map(String)
-      : raw.tags
-        ? (raw.tags as string[]).map(String)
-        : undefined,
-    createdAt: raw.created_at
-      ? String(raw.created_at)
-      : raw.createdAt
-        ? String(raw.createdAt)
-        : undefined,
-    updatedAt: raw.updated_at
-      ? String(raw.updated_at)
-      : raw.updatedAt
-        ? String(raw.updatedAt)
-        : undefined,
-    closedAt: raw.closed_at
-      ? String(raw.closed_at)
-      : raw.closedAt
-        ? String(raw.closedAt)
-        : undefined,
-    dependsOn: Array.isArray(raw.depends_on)
-      ? raw.depends_on.map((id) => ({ id: String(id) }))
-      : Array.isArray(raw.dependsOn)
-        ? raw.dependsOn.map((id) => ({ id: String(id) }))
-        : undefined,
-    blocks: Array.isArray(raw.blocks)
-      ? raw.blocks.map((id) => ({ id: String(id) }))
-      : undefined,
-  };
+  return hydrated;
 }
 
 /**
@@ -393,8 +520,8 @@ export function issueToWebviewBead(issue: {
   created_at: string;
   updated_at: string;
   closed_at?: string;
-  dependencies?: BackendBeadDependency[];
-  dependents?: BackendBeadDependency[];
+  dependencies?: RawDependency[];
+  dependents?: RawDependency[];
   comments?: Array<{ id: string; author: string; text: string; created_at: string }>;
 }): Bead | null {
   const status = normalizeStatus(issue.status);
@@ -418,22 +545,8 @@ export function issueToWebviewBead(issue: {
     createdAt: issue.created_at,
     updatedAt: issue.updated_at,
     closedAt: issue.closed_at,
-    dependsOn: issue.dependencies?.map((d) => ({
-      id: d.id,
-      type: d.issue_type,
-      dependencyType: d.dependency_type as DependencyType | undefined,
-      title: d.title,
-      status: d.status ? normalizeStatus(d.status) ?? undefined : undefined,
-      priority: d.priority !== undefined ? normalizePriority(d.priority) : undefined,
-    })),
-    blocks: issue.dependents?.map((d) => ({
-      id: d.id,
-      type: d.issue_type,
-      dependencyType: d.dependency_type as DependencyType | undefined,
-      title: d.title,
-      status: d.status ? normalizeStatus(d.status) ?? undefined : undefined,
-      priority: d.priority !== undefined ? normalizePriority(d.priority) : undefined,
-    })),
+    dependsOn: hydrateDependencies(issue.dependencies),
+    blocks: hydrateDependencies(issue.dependents),
     comments: issue.comments?.map((c) => ({
       id: c.id,
       author: c.author,

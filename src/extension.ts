@@ -11,6 +11,10 @@ import { BeadsProjectManager } from "./backend/BeadsProjectManager";
 import { DashboardViewProvider } from "./providers/DashboardViewProvider";
 import { BeadsPanelViewProvider } from "./providers/BeadsPanelViewProvider";
 import { BeadDetailsViewProvider } from "./providers/BeadDetailsViewProvider";
+import { BeadsGraphPanel } from "./providers/BeadsGraphPanel";
+import { BeadsSelection } from "./providers/BeadsSelection";
+import { BeadsDiagnostics } from "./providers/BeadsDiagnostics";
+import { BeadsWebviewHost } from "./providers/BeadsWebviewHost";
 import { createLogger, Logger } from "./utils/logger";
 
 let log: Logger;
@@ -18,6 +22,9 @@ let projectManager: BeadsProjectManager;
 let dashboardProvider: DashboardViewProvider;
 let beadsPanelProvider: BeadsPanelViewProvider;
 let detailsProvider: BeadDetailsViewProvider;
+let graphPanel: BeadsGraphPanel;
+let selection: BeadsSelection;
+let diagnostics: BeadsDiagnostics;
 let statusBar: vscode.StatusBarItem;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -68,6 +75,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     log
   );
 
+  // The graph lives in an editor tab, not the sidebar: a DAG does not fit in
+  // 300px, and that constraint has shaped the whole extension until now.
+  graphPanel = new BeadsGraphPanel(context.extensionUri, projectManager, log);
+  context.subscriptions.push({ dispose: () => graphPanel.dispose() });
+
+  // One selected bead across every surface. Six surfaces each holding their own
+  // selection would be six places to lose your place.
+  selection = new BeadsSelection();
+  context.subscriptions.push(selection);
+
+  // A dependency cycle is a data defect the Problems panel can carry. Before
+  // this it rendered as an infinitely-expanding tree and nothing else.
+  diagnostics = new BeadsDiagnostics(log);
+  context.subscriptions.push(diagnostics);
+  context.subscriptions.push(
+    BeadsWebviewHost.observeGraph((model, project) => diagnostics.update(model, project))
+  );
+  context.subscriptions.push(
+    selection.onDidChange(({ beadId, origin }) => {
+      for (const surface of [dashboardProvider, beadsPanelProvider, detailsProvider, graphPanel]) {
+        surface.applySelection(beadId, origin);
+      }
+    })
+  );
+
   // Register webview providers
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("beadsDashboard", dashboardProvider, {
@@ -89,6 +121,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand("beads.openBeadsPanel", () => {
       vscode.commands.executeCommand("beadsPanel.focus");
+    }),
+
+    // Programmatic (not in the palette): the dashboard's stat strip routes
+    // here so a count click lands on the Issues list already filtered.
+    vscode.commands.registerCommand("beads.openIssuesWithPreset", (presetId: string) => {
+      vscode.commands.executeCommand("beadsPanel.focus");
+      beadsPanelProvider.applyPreset(presetId);
+    }),
+
+    vscode.commands.registerCommand("beads.openGraph", (beadId?: string) => {
+      graphPanel.show(beadId ?? selection.selected ?? undefined);
+    }),
+
+    vscode.commands.registerCommand("beads.showReady", () => {
+      vscode.commands.executeCommand("beadsDashboard.focus");
+    }),
+
+    vscode.commands.registerCommand("beads.findInGraph", () => {
+      graphPanel.show(selection.selected ?? undefined);
+      graphPanel.requestFind();
+    }),
+
+    vscode.commands.registerCommand("beads.toggleTreeMode", () => {
+      beadsPanelProvider.toggleTreeMode();
     }),
 
     vscode.commands.registerCommand("beads.openBeadDetails", async (beadId?: string) => {
@@ -125,6 +181,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (beadId) {
         detailsProvider.showBead(beadId);
         beadsPanelProvider.setSelectedBead(beadId);
+        selection.select(beadId, "beads.openBeadDetails");
       }
     }),
 
@@ -134,6 +191,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       dashboardProvider.hardRefresh();
       beadsPanelProvider.hardRefresh();
       detailsProvider.hardRefresh();
+      graphPanel.hardRefresh();
       log.info("Refresh complete");
       vscode.window.setStatusBarMessage("$(check) Beads: Refreshed", 2000);
     }),
@@ -281,13 +339,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       dashboardProvider.refresh();
       beadsPanelProvider.refresh();
       detailsProvider.refresh();
+      graphPanel.refresh();
     }),
 
     projectManager.onActiveProjectChanged(() => {
       beadsPanelProvider.setSelectedBead(null); // Clear selection on project switch
+      selection.clear("projectChange");
       dashboardProvider.refreshForProjectChange();
       beadsPanelProvider.refreshForProjectChange();
       detailsProvider.refreshForProjectChange();
+      graphPanel.refreshForProjectChange();
       updateStatusBar();
     }),
 

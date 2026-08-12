@@ -1,38 +1,39 @@
 /**
- * BaseViewProvider - Abstract base class for all Beads webview providers
+ * BaseViewProvider - the sidebar half of BeadsWebviewHost.
  *
- * Provides common functionality for:
- * - Setting up webview content
- * - Message passing between extension and webview
- * - Loading/error states
- * - Project context
+ * Owns the WebviewView lifecycle: resolution, visibility-driven reload, and the
+ * refresh entry points the extension calls when project state changes.
+ * Everything else - HTML, messages, loading state, the graph read - lives in
+ * BeadsWebviewHost so the editor-tab surfaces inherit exactly the same
+ * behaviour.
  */
 
-import * as path from "path";
 import * as vscode from "vscode";
 import { BeadsProjectManager } from "../backend/BeadsProjectManager";
-import {
-  ExtensionToWebviewMessage,
-  WebviewToExtensionMessage,
-} from "../backend/types";
+import { WebviewToExtensionMessage } from "../backend/types";
 import { Logger } from "../utils/logger";
-import { resolveEnvVariables } from "../utils/resolve-env-variables";
+import { BeadsWebviewHost } from "./BeadsWebviewHost";
 
-export abstract class BaseViewProvider implements vscode.WebviewViewProvider {
+export abstract class BaseViewProvider
+  extends BeadsWebviewHost
+  implements vscode.WebviewViewProvider
+{
   protected _view?: vscode.WebviewView;
-  protected readonly extensionUri: vscode.Uri;
-  protected readonly projectManager: BeadsProjectManager;
-  protected readonly log: Logger;
-  protected abstract readonly viewType: string;
+
+  protected get webview(): vscode.Webview | undefined {
+    return this._view?.webview;
+  }
+
+  protected get isVisible(): boolean {
+    return this._view?.visible ?? false;
+  }
 
   constructor(
     extensionUri: vscode.Uri,
     projectManager: BeadsProjectManager,
     logger: Logger
   ) {
-    this.extensionUri = extensionUri;
-    this.projectManager = projectManager;
-    this.log = logger;
+    super(extensionUri, projectManager, logger);
   }
 
   public resolveWebviewView(
@@ -44,15 +45,11 @@ export abstract class BaseViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(this.extensionUri, "dist"),
-        vscode.Uri.joinPath(this.extensionUri, "resources"),
-      ],
+      localResourceRoots: this.localResourceRoots(),
     };
 
     webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
 
-    // Handle messages from the webview
     webviewView.webview.onDidReceiveMessage(async (message: WebviewToExtensionMessage) => {
       await this.handleMessage(message);
     });
@@ -69,301 +66,32 @@ export abstract class BaseViewProvider implements vscode.WebviewViewProvider {
     // (handled in handleMessage) which indicates the app is ready to receive data.
   }
 
-  /**
-   * Initializes the view with current data
-   */
-  protected async initializeView(): Promise<void> {
-    if (!this._view) {
-      return;
-    }
-
-    // Send view type
-    this.postMessage({ type: "setViewType", viewType: this.viewType });
-
-    // Send current project
-    const project = this.projectManager.getActiveProject();
-    this.postMessage({ type: "setProject", project });
-
-    // Send all available projects
-    const projects = this.projectManager.getProjects();
-    this.postMessage({ type: "setProjects", projects });
-
-    // Send settings
-    const config = vscode.workspace.getConfiguration("beads");
-    // User ID: prefer setting, fallback to $USER, then "unknown"
-    const rawUserId = config.get<string>("userId", "");
-    const userId = resolveEnvVariables(rawUserId || "") || process.env.USER || process.env.USERNAME || "unknown";
-    this.postMessage({
-      type: "setSettings",
-      settings: {
-        renderMarkdown: config.get<boolean>("renderMarkdown", true),
-        userId,
-        tooltipHoverDelay: config.get<number>("tooltipHoverDelay", 1000),
-      },
-    });
-
-    // Load view-specific data only for visible views.
-    if (this._view.visible) {
-      await this.loadData("initial");
-    }
-  }
-
-  /**
-   * Loads view-specific data. Override in subclasses.
-   */
-  protected abstract loadData(reason?: "initial" | "projectChange" | "manualRefresh" | "background"): Promise<void>;
-
-  /**
-   * Handles messages from the webview. Override in subclasses for custom handling.
-   */
-  protected async handleMessage(message: WebviewToExtensionMessage): Promise<void> {
-    switch (message.type) {
-      case "ready":
-        await this.initializeView();
-        break;
-
-      case "refresh":
-        await this.loadData("manualRefresh");
-        break;
-
-      case "selectProject": {
-        let switched = await this.projectManager.setActiveProject(message.projectId);
-        if (!switched && message.projectRootPath) {
-          const fallback = this.projectManager
-            .getProjects()
-            .find((project) => project.rootPath === message.projectRootPath);
-          if (fallback) {
-            switched = await this.projectManager.setActiveProject(fallback.id);
-          }
-        }
-        break;
-      }
-
-      case "selectBead":
-        vscode.commands.executeCommand("beads.openBeadDetails", message.beadId);
-        break;
-
-      case "showDoltStatus":
-        vscode.commands.executeCommand("beads.showDoltStatus");
-        break;
-
-      case "startDoltServer":
-        vscode.commands.executeCommand("beads.startDoltServer");
-        break;
-
-      case "stopDoltServer":
-        vscode.commands.executeCommand("beads.stopDoltServer");
-        break;
-
-      case "openDoltLog":
-        vscode.commands.executeCommand("beads.openDoltLog");
-        break;
-
-      case "openProjectFolder": {
-        const project = this.projectManager.getActiveProject();
-        if (project) {
-          await vscode.commands.executeCommand("revealInExplorer", vscode.Uri.file(project.rootPath));
-        }
-        break;
-      }
-
-      case "openBeadDetails":
-        vscode.commands.executeCommand("beads.openBeadDetails", message.beadId);
-        break;
-
-      case "viewInGraph":
-        // Focus the graph view and highlight the bead
-        vscode.commands.executeCommand("beadsGraph.focus");
-        break;
-
-      case "copyBeadId":
-        if (message.beadId) {
-          await vscode.env.clipboard.writeText(message.beadId);
-          vscode.window.setStatusBarMessage(`$(check) Copied: ${message.beadId}`, 2000);
-        }
-        break;
-
-      case "openFile":
-        await this.handleOpenFile(message.filePath, message.line);
-        break;
-
-      default:
-        await this.handleCustomMessage(message);
-    }
-  }
-
-  /**
-   * Override in subclasses to handle view-specific messages
-   */
-  protected async handleCustomMessage(
-    _message: WebviewToExtensionMessage
-  ): Promise<void> {
-    // Default: do nothing
-  }
-
-  /**
-   * Opens a file in the editor, optionally at a specific line
-   */
-  private async handleOpenFile(filePath: string, line?: number): Promise<void> {
-    const project = this.projectManager.getActiveProject();
-    if (!project) {
-      vscode.window.showWarningMessage("No active project");
-      return;
-    }
-
-    // Resolve path relative to project root
-    const resolvedPath = path.isAbsolute(filePath)
-      ? filePath
-      : vscode.Uri.joinPath(vscode.Uri.file(project.rootPath), filePath).fsPath;
-
-    const fileUri = vscode.Uri.file(resolvedPath);
-
-    try {
-      // Check if file exists
-      await vscode.workspace.fs.stat(fileUri);
-
-      // Open the file
-      const doc = await vscode.workspace.openTextDocument(fileUri);
-      const editor = await vscode.window.showTextDocument(doc);
-
-      // If line specified, scroll to it
-      if (line !== undefined && line > 0) {
-        const lineIndex = line - 1; // VS Code uses 0-based line numbers
-        const position = new vscode.Position(lineIndex, 0);
-        editor.selection = new vscode.Selection(position, position);
-        editor.revealRange(
-          new vscode.Range(position, position),
-          vscode.TextEditorRevealType.InCenter
-        );
-      }
-    } catch (err) {
-      vscode.window.showWarningMessage(`File not found: ${filePath}`);
-    }
-  }
-
-  /**
-   * Sends a message to the webview
-   */
-  protected postMessage(message: ExtensionToWebviewMessage): void {
-    if (this._view) {
-      this._view.webview.postMessage(message);
-    }
-  }
-
-  /**
-   * Sets the loading state in the webview
-   */
-  protected setLoading(loading: boolean): void {
-    this.postMessage({ type: "setLoading", loading });
-  }
-
-  /**
-   * Sets an error message in the webview
-   */
-  protected setError(error: string | null): void {
-    this.postMessage({ type: "setError", error });
-  }
-
-  /**
-   * Handles backend connection errors - logs and notifies ProjectManager
-   * Views show error state in UI; centralized notification handled by ProjectManager
-   */
-  protected handleBackendError(message: string, err: unknown): void {
-    this.log.error(`${message}: ${err}`);
-    // ProjectManager handles notification details - views just update their error state
-    this.projectManager.notifyBackendError(err);
-  }
-
-  /**
-   * Triggers a refresh of the view
-   */
+  /** Triggers a background refresh of the view. */
   public refresh(): void {
-    if (!this._view?.visible) {
-      return;
-    }
-
-    // Update project state in webview
-    const project = this.projectManager.getActiveProject();
-    this.postMessage({ type: "setProject", project });
-
-    // Also update projects list (for dropdown status indicators)
-    const projects = this.projectManager.getProjects();
-    this.postMessage({ type: "setProjects", projects });
-
-    this.loadData("background");
+    this.reloadWithProjectContext("background");
   }
 
   public hardRefresh(): void {
-    if (!this._view?.visible) {
-      return;
-    }
-
-    const project = this.projectManager.getActiveProject();
-    this.postMessage({ type: "setProject", project });
-
-    const projects = this.projectManager.getProjects();
-    this.postMessage({ type: "setProjects", projects });
-
-    this.loadData("manualRefresh");
+    this.reloadWithProjectContext("manualRefresh");
   }
 
-  /**
-   * Triggers a refresh intended for active project switches.
-   */
+  /** Refresh intended for active project switches. */
   public refreshForProjectChange(): void {
-    if (!this._view?.visible) {
+    this.reloadWithProjectContext("projectChange");
+  }
+
+  private reloadWithProjectContext(
+    reason: "background" | "manualRefresh" | "projectChange"
+  ): void {
+    if (!this.isVisible) {
       return;
     }
 
-    const project = this.projectManager.getActiveProject();
-    this.postMessage({ type: "setProject", project });
+    // Project state travels with every refresh so the dropdown's status
+    // indicators stay current even when the data itself has not changed.
+    this.postMessage({ type: "setProject", project: this.projectManager.getActiveProject() });
+    this.postMessage({ type: "setProjects", projects: this.projectManager.getProjects() });
 
-    const projects = this.projectManager.getProjects();
-    this.postMessage({ type: "setProjects", projects });
-
-    this.loadData("projectChange");
-  }
-
-  /**
-   * Generates the HTML content for the webview
-   */
-  protected getHtmlForWebview(webview: vscode.Webview): string {
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "main.js")
-    );
-
-    const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "main.css")
-    );
-
-    const nonce = this.getNonce();
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} https: data:; font-src ${webview.cspSource};">
-  <link href="${styleUri}" rel="stylesheet">
-  <title>Beads</title>
-</head>
-<body>
-  <div id="root"></div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
-  }
-
-  /**
-   * Generates a random nonce for CSP
-   */
-  private getNonce(): string {
-    let text = "";
-    const possible =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    for (let i = 0; i < 32; i++) {
-      text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
+    this.loadData(reason);
   }
 }

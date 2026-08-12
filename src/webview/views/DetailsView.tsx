@@ -184,7 +184,6 @@ const PRIORITY_OPTIONS: ColoredSelectOption<BeadPriority>[] = ([0, 1, 2, 3, 4] a
   value: p,
   label: `P${p}`,
   color: PRIORITY_COLORS[p],
-  textColor: p === 2 ? "#1a1a1a" : "#ffffff", // dark text on yellow
 }));
 
 interface DetailsViewProps {

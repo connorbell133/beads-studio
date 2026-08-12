@@ -5,6 +5,7 @@ import {
   AddCommentArgs,
   BackendCompatibility,
   BeadsBackend,
+  BeadsGraphPayload,
   BeadsIssue,
   CloseIssueArgs,
   CreateIssueArgs,
@@ -12,6 +13,7 @@ import {
   MIN_SUPPORTED_BD_VERSION,
   UpdateIssueArgs,
 } from "./BeadsBackend";
+import { edgesFromIssues } from "./types";
 
 const execFileAsync = util.promisify(execFile);
 const BD_COMMAND_TIMEOUT_MS = 30000;
@@ -39,8 +41,52 @@ function toStringArray(values?: string[]): string[] {
   return values.flatMap((v) => ["--label", v]);
 }
 
-export function createListCommandArgs(): string[] {
-  return ["list", "--all", "--limit", "0", "--json"];
+/**
+ * What the installed bd can be asked for on the list path.
+ *
+ * bd rejects an unknown flag outright and fails the whole command, so a flag
+ * that might not exist can never be sent speculatively - one bad flag takes
+ * down every view that reads the list.
+ */
+export interface ListCapabilities {
+  /** `bd list` accepts both --include-gates and --include-infra. */
+  includeHidden: boolean;
+}
+
+/** Assume nothing until the probe says otherwise. */
+export const NO_LIST_CAPABILITIES: ListCapabilities = { includeHidden: false };
+
+/**
+ * Reads `bd list --help` for the flags that make a graph read complete.
+ *
+ * Parsing help text is deterministic and needs no error-string classification,
+ * unlike probing the real command and interpreting the failure. Version
+ * comparison was rejected because the release that introduced these flags is
+ * not known, and guessing a floor would lock out working builds.
+ *
+ * Both flags are required together: a build advertising only one is treated as
+ * unsupported rather than sending half the pair and hoping.
+ */
+export function detectListCapabilities(helpText: string): ListCapabilities {
+  return {
+    includeHidden:
+      helpText.includes("--include-gates") && helpText.includes("--include-infra"),
+  };
+}
+
+/**
+ * Args for the list read.
+ *
+ * With no capabilities the result reproduces `bd list`'s default filtering,
+ * which is correct for the surfaces that display the list and incomplete for
+ * anything deriving readiness from it.
+ */
+export function createListCommandArgs(capabilities?: ListCapabilities): string[] {
+  const args = ["list", "--all", "--limit", "0", "--json"];
+  if (capabilities?.includeHidden) {
+    args.push("--include-gates", "--include-infra");
+  }
+  return args;
 }
 
 /**
@@ -61,6 +107,7 @@ export class BeadsCommandRunner implements BeadsBackend {
   private readonly log: Logger;
   private readonly minSupportedVersion: string;
   private compatibilityPromise: Promise<BackendCompatibility> | null = null;
+  private listCapabilitiesPromise: Promise<ListCapabilities> | null = null;
   private readonly inFlightReads = new Map<string, Promise<unknown>>();
   private readonly recentJsonCache = new Map<string, { expiresAt: number; value: unknown }>();
 
@@ -95,6 +142,57 @@ export class BeadsCommandRunner implements BeadsBackend {
   async list(): Promise<BeadsIssue[]> {
     const result = await this.runReadJson(createListCommandArgs(), { cacheTtlMs: 750 });
     return Array.isArray(result) ? (result as BeadsIssue[]) : [];
+  }
+
+  /**
+   * `bd list` already ships each bead's edges inline, so the graph read is the
+   * same call with the completeness flags plus edge extraction.
+   *
+   * The payload is only `complete` when bd could be asked to include gate and
+   * infra beads. Without them the node set is missing beads that visible beads
+   * still point at, so the edge set has targets with nothing behind them -
+   * verified against bd 1.2.1, where a gate blocking a task leaves a dangling
+   * edge and makes `bd ready` and a naive client-side graph disagree.
+   */
+  async listGraph(): Promise<BeadsGraphPayload> {
+    const capabilities = await this.getListCapabilities();
+    const result = await this.runReadJson(createListCommandArgs(capabilities), {
+      cacheTtlMs: 750,
+    });
+    const nodes = Array.isArray(result) ? (result as BeadsIssue[]) : [];
+    return { nodes, edges: edgesFromIssues(nodes), complete: capabilities.includeHidden };
+  }
+
+  private async getListCapabilities(): Promise<ListCapabilities> {
+    this.listCapabilitiesPromise ??= this.probeListCapabilities();
+    return this.listCapabilitiesPromise;
+  }
+
+  /**
+   * One `bd list --help` per backend lifetime, memoized like the version check.
+   *
+   * A probe that fails degrades to no capabilities rather than propagating: an
+   * unreadable help text is a reason to ask bd for less, never a reason to fail
+   * the list and blank every view.
+   */
+  private async probeListCapabilities(): Promise<ListCapabilities> {
+    try {
+      const { stdout, stderr } = await this.execBd(["list", "--help"], 1024 * 1024);
+      const capabilities = detectListCapabilities(`${stdout}\n${stderr}`);
+      this.log.debug(
+        capabilities.includeHidden
+          ? "bd list supports --include-gates/--include-infra; graph reads are complete"
+          : "bd list lacks --include-gates/--include-infra; graph reads will be partial"
+      );
+      return capabilities;
+    } catch (error) {
+      this.log.debug(
+        `Unable to probe bd list capabilities, assuming none: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+      return NO_LIST_CAPABILITIES;
+    }
   }
 
   async info(): Promise<Record<string, unknown>> {
@@ -223,7 +321,9 @@ export class BeadsCommandRunner implements BeadsBackend {
     await this.runJson(cmdArgs);
   }
 
-  private async execBd(args: string[], maxBuffer: number): Promise<{ stdout: string; stderr: string }> {
+  // Protected rather than private so tests can substitute the process boundary
+  // without spawning bd; every other member stays encapsulated.
+  protected async execBd(args: string[], maxBuffer: number): Promise<{ stdout: string; stderr: string }> {
     const commandLabel = [this.bdPath, ...args].join(" ");
     this.log.debug(`Running: ${commandLabel} (cwd=${this.cwd}, BEADS_DIR=${this.beadsDir})`);
 

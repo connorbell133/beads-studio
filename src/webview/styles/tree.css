@@ -1,0 +1,192 @@
+/* Tree mode for the Issues list.
+ *
+ * Hierarchy is drawn twice on purpose: indentation carries depth as distance,
+ * and the connector line carries it as a mark. A high-contrast theme may redraw
+ * or drop the line - the indent survives that, so depth is never lost.
+ *
+ * Colour follows the token rule: hue only in dots, bars and borders, every
+ * label in a text-safe token. See src/webview/theme/tokens.ts. */
+
+.tree-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+/* The label keeps the flat list's id-over-title stack and its truncation. */
+.tree-cell-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+/* The connector: a vertical run down the parent's indent with an elbow into
+   the row. Decorative - depth is already in the indent - so it is hidden from
+   assistive tech and surrendered to system colours in forced-colors. */
+.tree-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: var(--vscode-tree-indentGuidesStroke, var(--vscode-panel-border));
+  opacity: 0.8;
+}
+
+.tree-rail::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 6px;
+  height: 1px;
+  background-color: inherit;
+}
+
+.tree-toggle {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  cursor: pointer;
+}
+
+.tree-toggle:hover {
+  color: var(--vscode-textLink-foreground);
+}
+
+/* Leaves reserve the chevron's width so sibling titles start on one line. */
+.tree-toggle-spacer {
+  flex: 0 0 auto;
+  width: 16px;
+}
+
+.tree-chevron {
+  transition: transform var(--transition-fast);
+}
+
+/* Context rows: kept because a descendant matched the filter, not because they
+   matched. Dimmed, not hidden - a match under the wrong epic is a finding. */
+.tree-cell.tree-context .bead-title,
+.tree-cell.tree-context .bead-id {
+  opacity: 0.65;
+}
+
+.bead-row.tree-context-row .status-cell,
+.bead-row.tree-context-row .priority-cell,
+.bead-row.tree-context-row .type-cell {
+  opacity: 0.65;
+}
+
+/* A parent chain that loops back on itself. Words, not a colour, because this
+   is a diagnostic and has to survive being printed in one hue. */
+.tree-cycle-flag {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  font-size: 0.85em;
+  color: var(--vscode-charts-red);
+  border: 1px solid currentColor;
+  border-radius: var(--border-radius);
+}
+
+/* ---- Child completion ---------------------------------------------------
+   A ring for speed of scanning; the "3/11" fraction lives in the tooltip and
+   the aria-label, so the row's width goes to the title. */
+.tree-rollup {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+.tree-rollup-ring {
+  display: block;
+}
+
+.tree-rollup-ring-track {
+  fill: none;
+  stroke: var(--vscode-panel-border);
+  stroke-width: 2.5;
+}
+
+.tree-rollup-ring-fill {
+  fill: none;
+  stroke: var(--tree-rollup-hue, var(--vscode-charts-green));
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--transition-normal);
+}
+
+/* ---- Orphans lane -------------------------------------------------------
+   Parentless, childless work. Collapsed by default and reporting its own count,
+   because on a healthy project it is empty and on an unhealthy one its size is
+   the thing worth seeing. */
+.tree-lane .tree-lane-header td {
+  padding: 0;
+  background-color: var(--vscode-sideBar-background);
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.tree-lane-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-lane-toggle:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.tree-lane-title {
+  font-weight: 600;
+}
+
+.tree-lane-count {
+  padding: 0 5px;
+  border-radius: var(--border-radius);
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tree-lane-hint {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-chevron,
+  .tree-rollup-ring-fill {
+    transition: none;
+  }
+}
+
+/* The ring is the only visible carrier now, so it must survive the system
+   palette: track in the muted tone, progress in the text tone. The numbers
+   stay reachable through the tooltip and aria-label. */
+@media (forced-colors: active) {
+  .tree-rollup-ring-track {
+    forced-color-adjust: none;
+    stroke: GrayText;
+  }
+
+  .tree-rollup-ring-fill {
+    forced-color-adjust: none;
+    stroke: CanvasText;
+  }
+}

@@ -20,3 +20,13 @@ CLAUDE.local.md
 # them out of git. The repo's own root package.json is unaffected and tracked.
 .opencode/
 opencode.json
+
+# Agent worktrees created by Claude Code subagents
+.claude/worktrees/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*

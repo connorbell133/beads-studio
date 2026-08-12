@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 206.31 194.45">
-  <defs>
-    <style>.cls-1{fill:none;stroke:currentColor;stroke-miterlimit:10;stroke-width:16px;}</style>
-  </defs>
-  <rect class="cls-1" x="117.01" y="38.79" width="72.23" height="72.23" rx="5.15" ry="5.15" transform="translate(278.1 -41.02) rotate(111.09)"/>
-  <circle class="cls-1" cx="119.79" cy="150.27" r="36.17"/>
-  <path class="cls-1" d="M30.28,137.26c-8.65-5.02-17.03-11.11-24.96-18.17"/>
-  <path class="cls-1" d="M174.08.49c-.75,12.4-2.86,25.02-6.32,37.61"/>
-  <circle class="cls-1" cx="51.12" cy="146.39" r="23.32"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+  <!-- two bead strands converging on a goal bead -->
+  <circle cx="12" cy="6.5" r="3"/>
+  <circle cx="5.5" cy="18.5" r="2.5"/>
+  <circle cx="18.5" cy="18.5" r="2.5"/>
+  <circle cx="8.75" cy="12.5" r="1.7"/>
+  <circle cx="15.25" cy="12.5" r="1.7"/>
+  <path d="M 6.69 16.3 L 7.94 13.99 M 9.56 11.01 L 10.57 9.14"/>
+  <path d="M 17.31 16.3 L 16.06 13.99 M 14.44 11.01 L 13.43 9.14"/>
 </svg>

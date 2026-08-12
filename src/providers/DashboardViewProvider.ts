@@ -11,13 +11,18 @@
 import * as vscode from "vscode";
 import { BaseViewProvider } from "./BaseViewProvider";
 import { BeadsProjectManager } from "../backend/BeadsProjectManager";
-import { Bead, BeadsSummary, issueToWebviewBead, BeadPriority, BUILT_IN_STATUSES } from "../backend/types";
+import { BeadsSummary, BUILT_IN_STATUSES } from "../backend/types";
+import { deriveSummary } from "../graph/summary";
+import { BecameReadyEvent, diffReady, pruneEvents } from "../graph/pulse";
 import { Logger } from "../utils/logger";
 
 export class DashboardViewProvider extends BaseViewProvider {
   protected readonly viewType = "beadsDashboard";
   private static readonly MIN_LOADING_MS = 500;
   private loadSequence = 0;
+  /** Ready ids at the previous load; null until a baseline exists. */
+  private prevReady: Set<string> | null = null;
+  private becameReady: BecameReadyEvent[] = [];
 
   constructor(
     extensionUri: vscode.Uri,
@@ -29,6 +34,11 @@ export class DashboardViewProvider extends BaseViewProvider {
 
   protected async loadData(reason: "initial" | "projectChange" | "manualRefresh" | "background" = "background"): Promise<void> {
     const thisRequest = ++this.loadSequence;
+    if (reason === "projectChange") {
+      // Another project's ready set is not a baseline for this one.
+      this.prevReady = null;
+      this.becameReady = [];
+    }
     const client = this.projectManager.getClient();
     if (!client) {
       this.postMessage({
@@ -40,6 +50,7 @@ export class DashboardViewProvider extends BaseViewProvider {
           readyCount: 0,
           blockedCount: 0,
           inProgressCount: 0,
+          degraded: false,
         },
       });
       // No project/backend: clear loading so the webview shows the empty state
@@ -59,42 +70,37 @@ export class DashboardViewProvider extends BaseViewProvider {
     this.setError(null);
 
     try {
-      const issues = await client.list();
+      const loaded = await this.loadGraph();
       if (showLoading) {
         await this.waitForMinimumLoading(loadingStartedAt);
       }
-      if (thisRequest !== this.loadSequence) {
+      if (thisRequest !== this.loadSequence || !loaded) {
         return;
       }
 
-      const beads = issues.map(issueToWebviewBead).filter((b): b is Bead => b !== null);
-      // Seed the built-in statuses so they report 0 rather than undefined;
-      // custom statuses are added on demand as they are encountered.
-      const byStatus: Record<string, number> = Object.fromEntries(
-        BUILT_IN_STATUSES.map((s) => [s, 0])
-      );
-      const byPriority: Record<BeadPriority, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
-
-      for (const bead of beads) {
-        byStatus[bead.status] = (byStatus[bead.status] ?? 0) + 1;
-        if (bead.priority !== undefined) byPriority[bead.priority]++;
-      }
-
-      const summary: BeadsSummary = {
-        total: beads.length,
-        byStatus,
-        byPriority,
-        readyCount: byStatus.open,
-        blockedCount: byStatus.blocked,
-        inProgressCount: byStatus.in_progress,
-      };
+      const { beads, model } = loaded;
+      const summary = deriveSummary(beads, model, BUILT_IN_STATUSES) as BeadsSummary;
 
       this.postMessage({ type: "setSummary", summary });
+      this.postMessage({ type: "setGraph", graph: model });
 
-      const openBeads = beads.filter((b) => b.status === "open").slice(0, 5);
-      const blockedBeads = beads.filter((b) => b.status === "blocked").slice(0, 5);
-      const inProgressBeads = beads.filter((b) => b.status === "in_progress").slice(0, 5);
-      this.postMessage({ type: "setBeads", beads: [...openBeads, ...blockedBeads, ...inProgressBeads] });
+      // The full set, not a highlight subset: the pulse needs closed beads
+      // and honest label counts, and the webview derives its own slices.
+      this.postMessage({ type: "setBeads", beads });
+
+      // The one fact only this process can know: which ids became ready
+      // between two loads. The webview turns it into "newly ready" via
+      // computePulse; the first load is baseline only.
+      const readyNow = new Set(model.ready);
+      const at = Date.now();
+      if (this.prevReady) {
+        this.becameReady = pruneEvents(
+          [...this.becameReady, ...diffReady(this.prevReady, model.ready, at)],
+          at
+        );
+      }
+      this.prevReady = readyNow;
+      this.postMessage({ type: "setPulse", events: this.becameReady });
       this.setLoading(false);
     } catch (err) {
       if (showLoading) {

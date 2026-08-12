@@ -125,7 +125,7 @@ button {
 }
 
 .action-button.save {
-  background-color: var(--vscode-testing-iconPassed, #22c55e);
+  background-color: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
 }
 
 .action-button.cancel {
@@ -349,28 +349,37 @@ textarea {
   justify-content: center;
   padding: 2px 8px;
   border-radius: var(--badge-radius-pill);
+  gap: var(--spacing-xs);
   font-size: var(--badge-font-md);
   font-weight: 500;
-  color: white;
+  /* Label reads at the editor's own contrast; hue lives in the dot. */
+  color: var(--vscode-foreground);
+  background: var(--vscode-badge-background);
   white-space: nowrap;
   height: var(--badge-height-md);
   line-height: 1;
   font-variant: small-caps;
 }
 
+/* The hue carrier. A graphic, so the 3:1 bar applies rather than 4.5:1. */
+.status-dot,
+.type-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .priority-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 8px;
-  border-radius: var(--badge-radius-pill);
+  padding: 2px 4px;
   font-size: var(--badge-font-md);
-  font-weight: 500;
-  color: white;
   white-space: nowrap;
   height: var(--badge-height-md);
   line-height: 1;
-  font-variant: small-caps;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Joined status+priority pill - used in dependency lists */
@@ -395,12 +404,14 @@ textarea {
 }
 
 .status-priority-pill .pill-status {
-  color: #fff;
+  gap: var(--spacing-xs);
+  color: var(--vscode-foreground);
+  background: var(--vscode-badge-background);
   border-radius: var(--border-radius) 0 0 var(--border-radius);
 }
 
 .status-priority-pill .pill-priority {
-  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   border-radius: 0 var(--border-radius) var(--border-radius) 0;
 }
 
@@ -484,10 +495,14 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: var(--spacing-xs);
   padding: 0 6px;
+  border: 1px solid var(--vscode-panel-border);
   border-radius: var(--badge-radius-rect);
   font-size: var(--badge-font-sm);
   font-weight: 500;
+  /* Hue is the border and the dot; the label stays legible on any theme. */
+  color: var(--vscode-foreground);
   white-space: nowrap;
   height: var(--badge-height-sm);
   line-height: var(--badge-height-sm);
@@ -499,42 +514,6 @@ textarea {
   font-size: var(--badge-font-lg);
   padding: 3px 10px;
   height: var(--badge-height-lg);
-}
-
-/* Legacy type-chip class - alias to type-badge for backwards compat */
-.type-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: lowercase;
-}
-
-.type-bug {
-  background: #dc2626;
-  color: white;
-}
-
-.type-feature {
-  background: #16a34a;
-  color: white;
-}
-
-.type-task {
-  background: #eab308;
-  color: #1a1a1a;
-}
-
-.type-epic {
-  background: #9333ea;
-  color: white;
-}
-
-.type-chore {
-  background: #2563eb;
-  color: white;
 }
 
 .label-remove {
@@ -870,18 +849,18 @@ textarea {
 }
 
 .project-status-pill.running {
-  background: color-mix(in srgb, #10b981 18%, transparent);
-  color: #10b981;
+  background: color-mix(in srgb, var(--vscode-charts-green) 18%, transparent);
+  color: var(--vscode-foreground);
 }
 
 .project-status-pill.stopped {
-  background: color-mix(in srgb, #f59e0b 18%, transparent);
-  color: #f59e0b;
+  background: color-mix(in srgb, var(--vscode-charts-yellow) 18%, transparent);
+  color: var(--vscode-foreground);
 }
 
 .project-status-pill.unknown {
-  background: color-mix(in srgb, #64748b 18%, transparent);
-  color: #94a3b8;
+  background: color-mix(in srgb, var(--vscode-charts-lines) 18%, transparent);
+  color: var(--vscode-descriptionForeground);
 }
 
 .project-card-path,
@@ -995,6 +974,17 @@ textarea {
   font-size: 12px;
   height: var(--badge-height-sm);
   line-height: 1;
+}
+
+/* In the toolbar the preset sits beside the search box; match its height and
+   keep the label from wrapping as the panel narrows. */
+.panel-toolbar-compact .preset-dropdown {
+  flex-shrink: 0;
+}
+
+.panel-toolbar-compact .preset-dropdown-btn {
+  height: 22px;
+  white-space: nowrap;
 }
 
 .preset-dropdown-menu {
@@ -1252,7 +1242,7 @@ textarea {
 }
 
 .bead-id.copied {
-  color: var(--vscode-testing-iconPassed, #89d185);
+  color: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
 }
 
 .bead-title {
@@ -1359,6 +1349,7 @@ textarea {
 .col-menu label:hover {
   background: var(--vscode-list-hoverBackground);
 }
+
 
 .col-menu-divider {
   margin: 4px 0;
@@ -1544,226 +1535,181 @@ textarea {
   opacity: 0.8;
 }
 
-.summary-section.compact {
+/* ---- Dashboard stat strip -------------------------------------------------
+   Flat and borderless, ordered by the glance: Ready is the one accented
+   number, so it is the first thing a five-second visit resolves. The stats
+   that have a list answering them are real buttons that jump to it. */
+
+.dash-stats {
+  display: grid;
   grid-template-columns: repeat(4, minmax(56px, 1fr));
-  gap: 6px;
+  gap: 2px;
 }
 
-.dashboard-project-dir {
-  min-height: 28px;
+.dash-stat {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 0;
-  background: transparent;
+  gap: 2px;
+  padding: var(--spacing-sm) var(--spacing-xs);
   border: none;
-  overflow: hidden;
-  text-align: left;
-}
-
-.dashboard-project-dir-link {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-  padding: 0;
-  border: none;
+  border-radius: var(--border-radius-md);
   background: transparent;
   color: inherit;
-}
-
-.dashboard-project-dir-label {
-  flex-shrink: 0;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--vscode-descriptionForeground);
-}
-
-.dashboard-project-dir-value {
-  font-family: inherit;
-  display: inline-block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--vscode-foreground);
-  background: transparent;
-}
-
-.dashboard-project-dir-link:hover .dashboard-project-dir-value {
-  text-decoration: underline;
-}
-
-.summary-section {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
-  gap: var(--spacing-sm);
-}
-
-.summary-card {
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-radius: var(--border-radius-md);
-  background-color: var(--vscode-sideBar-background);
-  border: 1px solid var(--vscode-panel-border);
+  font: inherit;
   text-align: center;
 }
 
-.summary-card .card-value {
+.dash-stat-btn {
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.dash-stat-btn:hover:not(:disabled) {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.dash-stat-btn:disabled {
+  cursor: default;
+}
+
+.dash-stat-value {
   font-size: 18px;
   font-weight: 700;
   line-height: 1.1;
-}
-
-.summary-card .card-label {
-  font-size: 9px;
-  color: var(--vscode-descriptionForeground);
-  text-transform: uppercase;
-  margin-top: 2px;
-}
-
-.summary-card.total .card-value {
   color: var(--vscode-foreground);
 }
 
-.summary-card.ready .card-value {
-  color: #10b981;
-}
-
-.summary-card.in-progress .card-value {
-  color: #3b82f6;
-}
-
-.summary-card.blocked .card-value {
-  color: #ef4444;
-}
-
-.breakdown-section {
-  padding: var(--spacing-md);
-  background-color: var(--vscode-sideBar-background);
-  border-radius: var(--border-radius-lg);
-  border: 1px solid var(--vscode-panel-border);
-}
-
-.breakdown-section h3 {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--vscode-descriptionForeground);
+.dash-stat-label {
+  font-size: 10px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  margin-bottom: var(--spacing-md);
+  color: var(--vscode-descriptionForeground);
 }
 
-.breakdown-bars {
+/* ---- Dashboard sections ---------------------------------------------------
+   Grouping is a header plus spacing, matching the lane below. The card
+   borders this replaces disagreed with the rest of the surface. */
+
+.dash-section {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
 }
 
-.breakdown-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-}
-
-.bar-label {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  min-width: 100px;
-}
-
-.bar-label.compact {
-  min-width: 84px;
-  gap: 6px;
-}
-
-.bar-label.compact.label {
-  min-width: 120px;
-}
-
-.bar-count {
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.bar-track {
-  flex: 1;
-  height: 8px;
-  background-color: var(--vscode-progressBar-background);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.bar-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width var(--transition-normal);
-}
-
-.bar-fill.label {
-  opacity: 0.95;
-}
-
-.work-sections {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--spacing-md);
-}
-
-.work-section {
-  padding: var(--spacing-md);
-  background-color: var(--vscode-sideBar-background);
-  border-radius: var(--border-radius-lg);
-  border: 1px solid var(--vscode-panel-border);
-}
-
-.work-section h3 {
-  font-size: 12px;
+.dash-section-title {
+  margin: 0;
+  font-size: 0.9em;
   font-weight: 600;
   text-transform: uppercase;
-  margin-bottom: var(--spacing-md);
-  padding-bottom: var(--spacing-sm);
-  border-bottom: 1px solid var(--vscode-panel-border);
-}
-
-.work-section.ready h3 { color: #10b981; }
-.work-section.in-progress h3 { color: #3b82f6; }
-.work-section.blocked h3 { color: #ef4444; }
-
-.bead-list {
-  list-style: none;
-}
-
-.bead-list-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-sm);
-  margin-bottom: var(--spacing-xs);
-  border-radius: var(--border-radius);
-  cursor: pointer;
-  transition: background-color var(--transition-fast);
-}
-
-.bead-list-item:hover {
-  background-color: var(--vscode-list-hoverBackground);
-}
-
-.bead-list-item .bead-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.bead-list-item .bead-id {
-  font-size: 10px;
+  letter-spacing: 0.06em;
   color: var(--vscode-descriptionForeground);
 }
 
-.bead-list-item .bead-title {
-  font-size: 12px;
-  white-space: nowrap;
+/* One stacked bar carries the whole distribution; the legend under it names
+   each segment with the same glyph the issues list uses for that status. */
+
+.dash-distribution {
+  display: flex;
+  height: 6px;
+  gap: 2px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.dash-distribution-segment {
+  flex-basis: 3px;
+  min-width: 3px;
+  border-radius: 3px;
+}
+
+/* The bar is the stat strip's denominator, not a second summary: it sits
+   directly under the numbers, and its caption names only the statuses the
+   strip does not carry. */
+.dash-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.dash-progress-caption {
+  margin: 0;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+
+.dash-upnext-hint {
+  margin: 0;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ---- Pulse ----------------------------------------------------------------
+   What happened while the operator wasn't looking: one line of deltas, plus a
+   row per claim that has stopped moving. */
+
+.dash-section-sub {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.8;
+}
+
+.dash-pulse-quiet {
+  margin: 0;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.dash-pulse-line {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--spacing-md);
+  row-gap: var(--spacing-xs);
+}
+
+.dash-pulse-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.dash-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.dash-pulse-count {
+  font-weight: 700;
+  color: var(--vscode-foreground);
+}
+
+.dash-stale-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.dash-stale-held {
+  flex: 0 0 auto;
+  max-width: 16ch;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.dash-activity-time {
+  flex: 0 0 auto;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
 }
 
 /* ==================== Bead Details ==================== */
@@ -2006,8 +1952,6 @@ textarea {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: var(--border-radius);
-  background: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
 }
 
 .assignee-trigger {
@@ -2306,19 +2250,19 @@ textarea {
 
 /* Type-based coloring for dependency items (matches filter chips) */
 .dep-item.dep-type-bug {
-  border-left-color: #dc2626;
+  border-left-color: var(--vscode-charts-red);
 }
 .dep-item.dep-type-feature {
-  border-left-color: #16a34a;
+  border-left-color: var(--vscode-charts-green);
 }
 .dep-item.dep-type-task {
-  border-left-color: #eab308;
+  border-left-color: var(--vscode-charts-yellow);
 }
 .dep-item.dep-type-epic {
-  border-left-color: #9333ea;
+  border-left-color: var(--vscode-charts-purple);
 }
 .dep-item.dep-type-chore {
-  border-left-color: #2563eb;
+  border-left-color: var(--vscode-charts-blue);
 }
 
 .dep-remove {
@@ -2565,7 +2509,12 @@ textarea {
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 500;
-  background: #fff176;  /* Classic sticky note yellow */
+  /* The one deliberate literal pair in the webview: an opaque sticky-note
+     overlay whose foreground and background are chosen together and therefore
+     hold their contrast on any theme (measured 15.9:1, asserted in
+     theme/__tests__/contrast.test.ts). Theming these independently would let
+     the pair drift apart. */
+  background: #fff176;
   color: #1a1a1a;
   border-radius: 3px;
   white-space: nowrap;
@@ -2667,11 +2616,23 @@ textarea {
 }
 
 .kanban-column.collapsed .kanban-column-header {
+  /* Fill the strip so the header's divider never cuts across mid-column */
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   writing-mode: vertical-rl;
   text-orientation: mixed;
-  padding: var(--spacing-md) var(--spacing-xs);
+  padding: var(--spacing-sm) 0;
   justify-content: flex-start;
+  align-items: center;
   gap: var(--spacing-sm);
+  border-bottom: none;
+}
+
+.kanban-column.collapsed .kanban-column-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kanban-column-count {
@@ -2685,6 +2646,9 @@ textarea {
 .kanban-column.collapsed .kanban-column-count {
   writing-mode: horizontal-tb;
   text-orientation: mixed;
+  /* Badge leads the strip so counts align across collapsed columns */
+  order: -1;
+  flex-shrink: 0;
 }
 
 .kanban-column-body {
@@ -2830,4 +2794,247 @@ textarea {
 
 .view-toggle button:hover:not(.active) {
   background: var(--vscode-list-hoverBackground);
+}
+
+/* Degraded-mode caveat on the dashboard counts. Sits with the numbers it
+   qualifies rather than shouting from the top of the view. */
+.summary-degraded {
+  margin: var(--spacing-sm) 0 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-left: 2px solid var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground));
+  background: var(--vscode-textCodeBlock-background);
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* ---- Graph view (editor tab) --------------------------------------------
+   The adjacency layer: every bead and its blockers as real text. This is the
+   accessible representation the visual layer sits on top of, not a fallback.
+   Wider measure than the sidebar because an editor tab has the room. */
+.graph-view {
+  padding: var(--spacing-lg) var(--spacing-xl);
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.graph-header {
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  margin-bottom: var(--spacing-md);
+}
+
+.graph-title {
+  margin: 0;
+  font-size: 1.3em;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.graph-subtitle {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  max-width: 60ch;
+}
+
+.graph-summary {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.graph-cycle-warning {
+  color: var(--vscode-editorWarning-foreground, var(--vscode-errorForeground));
+}
+
+.graph-adjacency {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.graph-row {
+  border-bottom: 1px solid var(--vscode-panel-border);
+  padding: var(--spacing-xs) 0;
+}
+
+/* A cycle is data to report, so mark the rows tangled in one rather than
+   silently rendering an unresolvable ordering. */
+.graph-row.in-cycle {
+  border-left: 2px solid var(--vscode-editorWarning-foreground, var(--vscode-errorForeground));
+  padding-left: var(--spacing-sm);
+}
+
+.graph-row.selected {
+  background: var(--vscode-list-activeSelectionBackground);
+}
+
+.graph-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.graph-row-main:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.graph-row-id {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
+}
+
+.graph-row-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-chip {
+  flex-shrink: 0;
+  padding: 1px var(--spacing-sm);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 10px;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.graph-chip.ready {
+  border-color: var(--vscode-testing-iconPassed);
+  color: var(--vscode-testing-iconPassed);
+}
+
+/* The blocker chain reads inline as a breadcrumb, not as a red badge that
+   hides which bead is actually in the way. */
+.graph-row-blockers {
+  margin: 0 0 var(--spacing-xs) 0;
+  padding-left: calc(16px + var(--spacing-sm) + var(--spacing-sm));
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.graph-blockers-label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+
+.graph-blocker-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-family: var(--vscode-editor-font-family);
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.graph-blocker-link:hover {
+  color: var(--vscode-textLink-activeForeground);
+}
+
+.empty-state-hint {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+/* ---- High contrast --------------------------------------------------------
+   In a forced-colors context the user has told the OS to pick the palette.
+   The right move is to stop styling: surrender decorative fills and let the
+   system colours through, keeping only the shapes that carry meaning. Every
+   state here is also carried by a label or an icon, so nothing is lost when
+   the hues go. */
+@media (forced-colors: active) {
+  .status-dot,
+  .type-dot {
+    /* A dot with no forced-colors mapping renders as a flat block; give it the
+       system's own text colour so it stays visible but stops competing. */
+    background-color: CanvasText !important;
+    forced-color-adjust: none;
+  }
+
+  .status-badge,
+  .type-badge,
+  .status-priority-pill .pill-status {
+    background: Canvas;
+    color: CanvasText;
+    border: 1px solid CanvasText;
+  }
+
+  .priority-badge,
+  .status-priority-pill .pill-priority {
+    color: CanvasText;
+  }
+
+  /* Selection and focus must remain distinguishable from hover. */
+  .graph-row.selected,
+  .bead-row.selected {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .graph-chip.ready {
+    border-color: CanvasText;
+    color: CanvasText;
+  }
+}
+
+/* ---- Focus ---------------------------------------------------------------
+   The webview had no focus styling at all, so keyboard users could not see
+   where they were. One selector list rather than per-component rules, because
+   a focus ring that only some components have is worse than none - it reads as
+   the ring disappearing.
+
+   :focus-visible rather than :focus so a mouse click does not leave a ring
+   behind, which is why authors disable focus styling in the first place. */
+:where(
+  a,
+  button,
+  input,
+  textarea,
+  [tabindex]:not([tabindex="-1"]),
+  [role="button"],
+  [role="option"],
+  [role="tab"]
+):focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+  border-radius: var(--border-radius);
+}
+
+/* Rows are full-bleed, so an offset ring would be clipped by the neighbour.
+   Inset it instead of losing it. */
+.graph-row-main:focus-visible,
+.bead-row:focus-visible,
+.kanban-card:focus-visible {
+  outline-offset: -2px;
+}
+
+/* ---- Motion --------------------------------------------------------------
+   Three motions carry meaning in this UI, and each has a still equivalent.
+   Under a reduced-motion preference the state change still happens - it just
+   arrives immediately rather than being animated into place. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

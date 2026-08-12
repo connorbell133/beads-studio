@@ -1,11 +1,15 @@
 {
-  "name": "vscode-beads",
-  "displayName": "Beads",
-  "description": "VS Code extension for managing Beads issues",
-  "version": "0.14.1",
-  "publisher": "planet57",
+  "name": "beads-ui",
+  "displayName": "Beads UI",
+  "description": "Dashboard, kanban board, and dependency graph for the Beads (bd) issue tracker",
+  "version": "0.14.4",
+  "publisher": "connorbell133",
   "license": "Apache-2.0",
   "icon": "resources/icon.png",
+  "galleryBanner": {
+    "color": "#14161e",
+    "theme": "dark"
+  },
   "files": [
     "LICENSE",
     "CHANGELOG.md",
@@ -15,7 +19,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/jdillon/vscode-beads"
+    "url": "https://github.com/connorbell133/vscode-beads"
+  },
+  "homepage": "https://github.com/connorbell133/vscode-beads#readme",
+  "bugs": {
+    "url": "https://github.com/connorbell133/vscode-beads/issues"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -26,8 +34,13 @@
   ],
   "keywords": [
     "beads",
+    "bd",
     "issues",
+    "issue tracker",
+    "kanban",
+    "dependency graph",
     "project management",
+    "agents",
     "dashboard"
   ],
   "activationEvents": [
@@ -78,6 +91,10 @@
         "icon": "$(list-unordered)"
       },
       {
+        "command": "beads.openGraph",
+        "title": "Beads: Open Dependency Graph"
+      },
+      {
         "command": "beads.openBeadDetails",
         "title": "Beads: Open Issue Details",
         "icon": "$(file-text)"
@@ -91,6 +108,18 @@
         "command": "beads.copyBeadId",
         "title": "Beads: Copy Issue ID",
         "icon": "$(copy)"
+      },
+      {
+        "command": "beads.showReady",
+        "title": "Beads: Show Ready Work"
+      },
+      {
+        "command": "beads.findInGraph",
+        "title": "Beads: Find in Dependency Graph"
+      },
+      {
+        "command": "beads.toggleTreeMode",
+        "title": "Beads: Toggle Tree View"
       }
     ],
     "menus": {
@@ -113,7 +142,7 @@
       ]
     },
     "configuration": {
-      "title": "Beads",
+      "title": "Beads UI",
       "properties": {
         "beads.pathToBd": {
           "type": "string",
@@ -150,7 +179,24 @@
           "description": "Delay in milliseconds before showing bead description tooltip on hover. Set to 0 to disable tooltips."
         }
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "beads.showReady",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r"
+      },
+      {
+        "command": "beads.openGraph",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g"
+      },
+      {
+        "command": "beads.findInGraph",
+        "key": "ctrl+alt+f",
+        "mac": "cmd+alt+f"
+      }
+    ]
   },
   "scripts": {
     "compile": "bun run compile:extension && bun run compile:webview",
@@ -182,6 +228,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.1.1",
     "@tanstack/react-table": "^8.21.3",
     "lucide-react": "^0.563.0",
     "marked": "^17.0.6",

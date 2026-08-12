@@ -52,10 +52,10 @@ GitHub Actions uses `npx ovsx` (no install needed).
 
 #### 4. Create Namespace
 
-Before publishing, you must create the namespace that matches your `package.json` publisher field (`planet57`).
+Before publishing, you must create the namespace that matches your `package.json` publisher field (`connorbell133`).
 
 ```bash
-ovsx create-namespace planet57 -p YOUR_TOKEN
+ovsx create-namespace connorbell133 -p YOUR_TOKEN
 ```
 
 **Important**: Creating a namespace does NOT give you exclusive publishing rights. Anyone can publish to an unclaimed namespace. See step 5 for claiming ownership.
@@ -67,7 +67,7 @@ Reference: [ovsx CLI README](https://github.com/eclipse/openvsx/blob/master/cli/
 Without ownership, your extensions show a ⚠️ warning icon instead of a ✓ verified badge. To claim ownership:
 
 1. Log into [open-vsx.org](https://open-vsx.org/)
-2. Create a **public issue** at [github.com/EclipseFdn/open-vsx.org/issues](https://github.com/EclipseFdn/open-vsx.org/issues) requesting ownership of the `planet57` namespace
+2. Create a **public issue** at [github.com/EclipseFdn/open-vsx.org/issues](https://github.com/EclipseFdn/open-vsx.org/issues) requesting ownership of the `connorbell133` namespace
 3. Provide proof you own the namespace (e.g., link to your VS Code Marketplace publisher page, GitHub profile, etc.)
 4. Wait for maintainers to review and grant ownership
 
@@ -165,7 +165,7 @@ jobs:
           files: "*.vsix"
           generate_release_notes: false
           body: |
-            See [CHANGELOG.md](https://github.com/jdillon/vscode-beads/blob/main/CHANGELOG.md) for release notes.
+            See [CHANGELOG.md](https://github.com/connorbell133/vscode-beads/blob/main/CHANGELOG.md) for release notes.
           draft: false
 ```
 
@@ -179,7 +179,7 @@ Before the first automated release, Jason must complete these manual steps:
 | 2 | Sign Eclipse Contributor Agreement | ✓ |
 | 3 | Create Open VSX account (GitHub OAuth) | ✓ |
 | 4 | Generate access token | ✓ |
-| 5 | Create namespace: `ovsx create-namespace planet57 -p TOKEN` | ✓ |
+| 5 | Create namespace: `ovsx create-namespace connorbell133 -p TOKEN` | ✓ |
 | 6 | File ownership claim issue on GitHub | ✓ |
 | 7 | Add `OVSX_PAT` secret to repo | ✓ |
 | 8 | Update `release.yml` | ✓ |
@@ -204,15 +204,15 @@ Note: `ovsx` takes the VSIX file directly, while `vsce publish` packages and pub
 Add marketplace badges to README:
 
 ```markdown
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/planet57.vscode-beads?label=VS%20Code)](https://marketplace.visualstudio.com/items?itemName=planet57.vscode-beads)
-[![Open VSX](https://img.shields.io/open-vsx/v/planet57/vscode-beads?label=Open%20VSX)](https://open-vsx.org/extension/planet57/vscode-beads)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/connorbell133.beads-ui?label=VS%20Code)](https://marketplace.visualstudio.com/items?itemName=connorbell133.beads-ui)
+[![Open VSX](https://img.shields.io/open-vsx/v/connorbell133/beads-ui?label=Open%20VSX)](https://open-vsx.org/extension/connorbell133/beads-ui)
 ```
 
 ## Verification
 
 After the first release with Open VSX publishing:
 
-1. Check [open-vsx.org/extension/planet57/vscode-beads](https://open-vsx.org/extension/planet57/vscode-beads)
+1. Check [open-vsx.org/extension/connorbell133/beads-ui](https://open-vsx.org/extension/connorbell133/beads-ui)
 2. Have a Cursor user search for "Beads" in extensions
 3. Verify version matches VS Code Marketplace version
 4. Confirm verified badge appears (after ownership claim is approved)
@@ -223,7 +223,7 @@ After the first release with Open VSX publishing:
 
 You must create the namespace before first publish:
 ```bash
-npx ovsx create-namespace planet57 -p $OVSX_PAT
+npx ovsx create-namespace connorbell133 -p $OVSX_PAT
 ```
 
 ### Extension shows ⚠️ warning instead of verified

@@ -1,0 +1,209 @@
+/**
+ * GraphToolbar - the controls above the dependency DAG.
+ *
+ * Grouped by the question each one answers, left to right: which beads am I
+ * looking at (lens), where is the one I mean (find), how many are there
+ * (count), and how do I frame them (viewport). Nothing here holds state; the
+ * canvas owns all of it, so the toolbar can be read as a description of what
+ * the graph currently is.
+ *
+ * The find field reports its result as text rather than only as dimming, so the
+ * "no matches" case is a sentence and not an unexplained grey canvas.
+ */
+
+import React from "react";
+import {
+  EpicOption,
+  GraphLens,
+  GRAPH_LENSES,
+  LENS_DESCRIPTIONS,
+  LENS_LABELS,
+} from "../../graph/lens";
+import { Dropdown, DropdownItem } from "./Dropdown";
+
+export interface GraphToolbarProps {
+  lens: GraphLens;
+  onLensChange: (lens: GraphLens) => void;
+  /** Blast radius needs a bead to radiate from; without one its button explains why. */
+  anchored: boolean;
+
+  /** What the epic lens can anchor on. Empty disables that lens's tab. */
+  epics: EpicOption[];
+  /** The epic the epic lens is anchored on. */
+  epicId: string | null;
+  onEpicChange: (epicId: string) => void;
+
+  query: string;
+  onQueryChange: (query: string) => void;
+  onQueryKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  findInputRef?: React.RefObject<HTMLInputElement>;
+  /** How many nodes the query hit. `null` while the find is inactive. */
+  matchCount: number | null;
+
+  nodeCount: number;
+  edgeCount: number;
+  /** Beads in the model this lens does not represent at all. */
+  omitted: number;
+
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onFitAll: () => void;
+  onFitSelection: () => void;
+  canFit: boolean;
+  /** False when nothing is selected, or the selection is not on this lens. */
+  canFitSelection: boolean;
+
+  /**
+   * The filter controls, rendered inline after the lens group so the preset
+   * shares the toolbar row instead of floating detached beneath it. Wraps
+   * with the rest of the row when the panel narrows.
+   */
+  children?: React.ReactNode;
+}
+
+export function GraphToolbar({
+  lens,
+  onLensChange,
+  anchored,
+  epics,
+  epicId,
+  onEpicChange,
+  query,
+  onQueryChange,
+  onQueryKeyDown,
+  findInputRef,
+  matchCount,
+  nodeCount,
+  edgeCount,
+  omitted,
+  onZoomIn,
+  onZoomOut,
+  onFitAll,
+  onFitSelection,
+  canFit,
+  canFitSelection,
+  children,
+}: GraphToolbarProps): React.ReactElement {
+  const active = query.trim().length > 0;
+
+  return (
+    <div className="graph-canvas-toolbar">
+      <div className="graph-canvas-lenses" role="group" aria-label="Graph lens">
+        {GRAPH_LENSES.map((option) => {
+          const disabled =
+            (option === "blast-radius" && !anchored) || (option === "epic" && epics.length === 0);
+          return (
+            <button
+              key={option}
+              type="button"
+              className={`graph-canvas-lens${option === lens ? " active" : ""}`}
+              aria-pressed={option === lens}
+              disabled={disabled}
+              title={
+                option === "blast-radius" && !anchored
+                  ? "Select a bead to see what it touches"
+                  : option === "epic" && epics.length === 0
+                    ? "No epics in this project yet"
+                    : LENS_DESCRIPTIONS[option]
+              }
+              onClick={() => onLensChange(option)}
+            >
+              {LENS_LABELS[option]}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Which epic, but only while the answer matters. The picker names the
+          epic rather than saying "Epic:" - the active tab already says what
+          kind of thing it is. */}
+      {lens === "epic" && epics.length > 0 && (
+        <Dropdown
+          className="graph-canvas-epic-picker"
+          triggerClassName="graph-canvas-epic-trigger"
+          title="Choose which epic to draw"
+          trigger={
+            <span className="graph-canvas-epic-label">
+              {epics.find((epic) => epic.id === epicId)?.label ?? "Choose an epic"}
+            </span>
+          }
+        >
+          {epics.map((epic) => (
+            <DropdownItem
+              key={epic.id}
+              active={epic.id === epicId}
+              onClick={() => onEpicChange(epic.id)}
+              title={`${epic.id} — ${epic.label}`}
+            >
+              <span className="graph-canvas-epic-option">{epic.label}</span>
+              <span className="graph-canvas-epic-progress">
+                {epic.closed}/{epic.total}
+              </span>
+            </DropdownItem>
+          ))}
+        </Dropdown>
+      )}
+
+      {children}
+
+      <div className="graph-canvas-find">
+        <input
+          ref={findInputRef}
+          type="text"
+          className="graph-canvas-find-input"
+          value={query}
+          placeholder="Find by id or title"
+          aria-label="Find in graph"
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(event) => onQueryChange(event.target.value)}
+          onKeyDown={onQueryKeyDown}
+        />
+        {active && (
+          <button
+            type="button"
+            className="graph-canvas-find-clear"
+            aria-label="Clear find"
+            onClick={() => onQueryChange("")}
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      <p className="graph-canvas-count" role="status">
+        {active
+          ? matchCount === 0
+            ? `No beads match “${query.trim()}”`
+            : `${matchCount} of ${nodeCount} match “${query.trim()}”`
+          : `${nodeCount} ${nodeCount === 1 ? "node" : "nodes"} · ${edgeCount} ${
+              edgeCount === 1 ? "link" : "links"
+            }${omitted > 0 ? ` · ${omitted} not shown` : ""}`}
+      </p>
+
+      <div className="graph-canvas-zoom" role="group" aria-label="Viewport">
+        <button
+          type="button"
+          onClick={onFitSelection}
+          disabled={!canFitSelection}
+          title={
+            canFitSelection
+              ? "Frame the selected bead and what it links to"
+              : "Select a bead to frame it"
+          }
+        >
+          Fit selection
+        </button>
+        <button type="button" onClick={onFitAll} disabled={!canFit}>
+          Fit all
+        </button>
+        <button type="button" onClick={onZoomIn} aria-label="Zoom in">
+          +
+        </button>
+        <button type="button" onClick={onZoomOut} aria-label="Zoom out">
+          −
+        </button>
+      </div>
+    </div>
+  );
+}

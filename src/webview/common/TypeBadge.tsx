@@ -1,18 +1,17 @@
 /**
  * TypeBadge Component
  *
- * Displays bead type as a colored badge.
- * Shows raw type name with gray background for unknown types.
+ * An outlined chip: the hue lives in the border and a leading dot, the label
+ * reads in the editor foreground. Six usable hues cannot uniquely encode
+ * fourteen bead types, so hue groups them into families and the label (or the
+ * TypeIcon beside it) disambiguates.
+ *
+ * Replaces a filled badge with fixed text colours, where six of fourteen types
+ * fell below AA at their rendered size - `molecule` measured 2.49:1.
  */
 
 import React from "react";
-import {
-  TYPE_LABELS,
-  TYPE_COLORS,
-  TYPE_TEXT_COLORS,
-  UNKNOWN_TYPE_COLOR,
-  UNKNOWN_TYPE_TEXT_COLOR,
-} from "../types";
+import { TYPE_LABELS, typeHue } from "../types";
 
 interface TypeBadgeProps {
   type: string;
@@ -24,15 +23,15 @@ export function TypeBadge({
   size = "medium",
 }: TypeBadgeProps): React.ReactElement {
   const label = TYPE_LABELS[type as keyof typeof TYPE_LABELS] || type;
-  const bgColor = TYPE_COLORS[type as keyof typeof TYPE_COLORS] || UNKNOWN_TYPE_COLOR;
-  const textColor = TYPE_TEXT_COLORS[type as keyof typeof TYPE_TEXT_COLORS] || UNKNOWN_TYPE_TEXT_COLOR;
+  const hue = typeHue(type);
 
   return (
     <span
       className={`type-badge type-badge-${size}`}
-      style={{ backgroundColor: bgColor, color: textColor }}
+      style={{ borderColor: hue }}
       title={`Type: ${label}`}
     >
+      <span className="type-dot" style={{ backgroundColor: hue }} aria-hidden="true" />
       {label}
     </span>
   );

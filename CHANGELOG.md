@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Dependency graph in an editor tab, opened with `Beads: Open Dependency Graph` or the Details panel's "View in graph"
+- Dashboard rebuilt as a pulse surface for agent-swarm operators (vsbeads-zra): a "last hour" delta line (closed · filed · newly ready, with newly-ready tracked by diffing the graph's ready set across refreshes), stale-claim detection flagging in-progress beads untouched past two hours (a wedged agent, more often than not), and an activity feed of the five most recently touched beads with relative times. A flat stat strip routes each count to the Issues list pre-filtered (Total, Doing, Blocked) or opens the best ready pick (Ready); the stacked status bar sits directly under the strip as its denominator, captioned only with what the strip doesn't carry ("20 of 40 closed · 1 deferred"); a single graph-chosen "Up next" row and a toolbar button that opens the dependency graph round out the view. The dashboard's own ready/blocked/doing lists and label chips are gone: rows live in the Issues panel, the dashboard routes to them (vsbeads-vlw)
+- Dependency cycles reported in the Problems panel
+- "unblocks N" leverage and per-epic critical path
+- One bead selection shared across every surface, plus command-palette entries for ready work, the graph, find-in-graph, and tree mode
+- Tree mode for the Issues list, with an Orphans lane and child-completion rollup on epic rows
+- DAG legibility at scale: find-in-graph, fit-to-selection, hover chain isolation, density auto-collapse above 150 nodes, and edge-following keyboard traversal
+- Keyboard navigation for graph and lane surfaces, and a visible focus state throughout
+
+### Changed
+
+- Rebranded to **Beads UI** (`connorbell133.beads-ui`): new publisher, new original logo replacing the Flaticon-derived icon, repository moved to [connorbell133/vscode-beads](https://github.com/connorbell133/vscode-beads) (vsbeads-nft)
+- Graph lenses simplified: the Epics roll-up lens is gone (orphan top-level beads belong to All beads), the per-epic lens is renamed Epics and is now the default view, and over-dense graphs collapse to one epic instead of the roll-up (vsbeads-cfe)
+- On the Epics lens the anchor epic is drawn as the goal — accent hue, heavier outline, "goal" flag and its closed count — instead of wearing ready's green (vsbeads-oea)
+- Issues list redesigned in the style of Linear, mapped to beads-native objects (vsbeads-cgu, vsbeads-a9c, vsbeads-mkq, vsbeads-55o, vsbeads-fmn): rows are priority glyph · bead id · status ring · type icon · title · blocked-by/blocking chips from the dependency graph, grouped under their epic with sticky collapsible headers and a "No epic" group; status and priority are edited in place from the row; epic progress is a ring with the fraction on hover; labels, updated time, and assignee appear as the panel affords them, title first. Replaces the table and tree modes and their column chrome (headers, resizing, drag-reorder, show/hide menu)
+- Issues toolbar condensed: the status preset is a dropdown beside the search box, and the filter row appears only for filters added beyond the preset — a preset no longer explodes into a row of chips (vsbeads-bft)
+- The dependency graph carries the same filter row as the Issues list — status preset dropdown plus priority/type/assignee/label menus with faceted counts — filtering what every lens draws; filtered beads count into "not shown" (vsbeads-cwj, vsbeads-519)
+- The graph's "same graph as text" list wears the Linear row anatomy (priority glyph · id · status ring · type icon · title), keeping its arrow-key and screen-reader contract and the "blocked by" text lines (vsbeads-519)
+- Kanban cards adopt the issues list's anatomy — priority glyph · id · type icon with an initials avatar in the header, label pills below the title — replacing P-pills, raw assignee text, and tag-icon label rows (vsbeads-50i)
+- The graph's filter controls sit inline on the toolbar row instead of floating detached beneath it, wrapping with the rest as the panel narrows (vsbeads-aw3)
+
+### Fixed
+
+- Graph empty states now say what the active lens shows and where to switch it; lens buttons carry plain-language tooltips; an anchored blast radius with no links gets its own message instead of the epic roll-up's; the graph header and text-list disclosure explain themselves (vsbeads-x00)
+- Collapsed kanban columns render as clean uniform rails — counts pinned in an aligned row at the top, no ragged mid-column divider, long status names truncated (vsbeads-e2p)
+- Graph layout bounds now cover routed edge arcs, so containment tethers no longer bleed into an off-centre letterbox and "Fit all" frames everything drawn (vsbeads-99t)
+- Dashboard "Ready" and "Blocked" counts are derived from the dependency graph instead of counting status labels, so a bead with open blockers no longer counts as ready
+- Dependency edges from `bd list --json` were discarded because the extension expected the `bd show` shape; the extension had never loaded a graph
+- Gate and agent beads are now loaded so readiness can account for them, and filtered only where they are displayed
+- Beads with no priority set no longer render as P0 Critical on the Dolt backend
+- Badge colours are derived from VS Code theme tokens, fixing text that failed contrast on light and high-contrast themes
+- "View in graph" opened a view that was never registered and silently did nothing
+
 ## [0.14.1] - 2026-07-30
 
 ### Fixed
