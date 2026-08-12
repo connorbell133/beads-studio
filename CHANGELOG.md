@@ -27,11 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Issues toolbar condensed: the status preset is a dropdown beside the search box, and the filter row appears only for filters added beyond the preset — a preset no longer explodes into a row of chips (vsbeads-bft)
 - The dependency graph carries the same filter row as the Issues list — status preset dropdown plus priority/type/assignee/label menus with faceted counts — filtering what every lens draws; filtered beads count into "not shown" (vsbeads-cwj, vsbeads-519)
 - The graph's "same graph as text" list wears the Linear row anatomy (priority glyph · id · status ring · type icon · title), keeping its arrow-key and screen-reader contract and the "blocked by" text lines (vsbeads-519)
+- Kanban cards adopt the issues list's anatomy — priority glyph · id · type icon with an initials avatar in the header, label pills below the title — replacing P-pills, raw assignee text, and tag-icon label rows (vsbeads-50i)
+- The graph's filter controls sit inline on the toolbar row instead of floating detached beneath it, wrapping with the rest as the panel narrows (vsbeads-aw3)
 
 ### Fixed
 
 - Graph empty states now say what the active lens shows and where to switch it; lens buttons carry plain-language tooltips; an anchored blast radius with no links gets its own message instead of the epic roll-up's; the graph header and text-list disclosure explain themselves (vsbeads-x00)
 - Collapsed kanban columns render as clean uniform rails — counts pinned in an aligned row at the top, no ragged mid-column divider, long status names truncated (vsbeads-e2p)
+- Graph layout bounds now cover routed edge arcs, so containment tethers no longer bleed into an off-centre letterbox and "Fit all" frames everything drawn (vsbeads-99t)
 - Dashboard "Ready" and "Blocked" counts are derived from the dependency graph instead of counting status labels, so a bead with open blockers no longer counts as ready
 - Dependency edges from `bd list --json` were discarded because the extension expected the `bd show` shape; the extension had never loaded a graph
 - Gate and agent beads are now loaded so readiness can account for them, and filtered only where they are displayed

@@ -149,6 +149,23 @@ describe("layoutGraph", () => {
     }
     expect(result.bounds.minX).toBe(-10);
   });
+
+  it("bounds cover routed edge points, not just node boxes", () => {
+    // A two-node cycle forces dagre to arc the back-edge outside the node
+    // envelope; the viewBox must contain that arc or it bleeds into the
+    // letterbox and the picture reads off-centre.
+    const nodes = [node("a", 100, 40), node("b", 100, 40)];
+    const result = layoutGraph(nodes, [edge("a", "b"), edge("b", "a")], { padding: 10 });
+
+    for (const path of result.edges) {
+      for (const point of path.points) {
+        expect(point.x).toBeGreaterThanOrEqual(result.bounds.minX);
+        expect(point.y).toBeGreaterThanOrEqual(result.bounds.minY);
+        expect(point.x).toBeLessThanOrEqual(result.bounds.minX + result.bounds.width);
+        expect(point.y).toBeLessThanOrEqual(result.bounds.minY + result.bounds.height);
+      }
+    }
+  });
 });
 
 describe("layoutBounds", () => {

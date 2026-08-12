@@ -52,6 +52,13 @@ export interface GraphToolbarProps {
   canFit: boolean;
   /** False when nothing is selected, or the selection is not on this lens. */
   canFitSelection: boolean;
+
+  /**
+   * The filter controls, rendered inline after the lens group so the preset
+   * shares the toolbar row instead of floating detached beneath it. Wraps
+   * with the rest of the row when the panel narrows.
+   */
+  children?: React.ReactNode;
 }
 
 export function GraphToolbar({
@@ -75,6 +82,7 @@ export function GraphToolbar({
   onFitSelection,
   canFit,
   canFitSelection,
+  children,
 }: GraphToolbarProps): React.ReactElement {
   const active = query.trim().length > 0;
 
@@ -135,6 +143,8 @@ export function GraphToolbar({
           ))}
         </Dropdown>
       )}
+
+      {children}
 
       <div className="graph-canvas-find">
         <input

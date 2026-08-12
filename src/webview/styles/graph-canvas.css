@@ -35,6 +35,14 @@
   gap: var(--spacing-xs);
 }
 
+/* Inline in the toolbar row, the filter controls give up their own row's
+   padding and wrap with everything else as the panel narrows. */
+.graph-canvas-toolbar .filter-bar {
+  padding: 0;
+  min-height: 0;
+  flex: 0 1 auto;
+}
+
 .graph-canvas-zoom {
   margin-left: auto;
 }

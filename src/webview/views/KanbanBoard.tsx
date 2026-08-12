@@ -16,9 +16,9 @@ import {
   BUILT_IN_STATUSES,
 } from "../types";
 import { TypeIcon } from "../common/TypeIcon";
-import { PriorityBadge } from "../common/PriorityBadge";
+import { PriorityIcon } from "../common/PriorityIcon";
+import { Avatar } from "../common/Avatar";
 import { LabelBadge } from "../common/LabelBadge";
-import { Icon } from "../common/Icon";
 
 interface KanbanBoardProps {
   beads: Bead[];
@@ -158,32 +158,28 @@ export function KanbanBoard({ beads, selectedBeadId, onSelectBead, onUpdateBead,
                     onDragStart={(e) => handleDragStart(e, bead.id)}
                     onClick={() => onSelectBead(bead.id)}
                   >
+                    {/* The issues list's row anatomy, folded onto a card: the
+                        column already says the status, so the header carries
+                        priority glyph · id · type, and the avatar reads the
+                        same as it does in the list. */}
                     <div className="kanban-card-header">
-                      <TypeIcon type={(bead.type || "task") as BeadType} size={12} />
+                      <PriorityIcon priority={bead.priority} size={13} />
                       <span className="kanban-card-id">{bead.id}</span>
+                      <TypeIcon type={(bead.type || "task") as BeadType} size={12} />
+                      <span className="kanban-card-spacer" />
+                      {bead.assignee && <Avatar assignee={bead.assignee} />}
                     </div>
                     <div className="kanban-card-title">{bead.title}</div>
-                    <div className="kanban-card-meta">
-                      {bead.priority !== undefined && <PriorityBadge priority={bead.priority} size="small" />}
-                      {bead.assignee && (
-                        <>
-                          <Icon name="user" size={10} className="kanban-card-icon" />
-                          <span className="kanban-card-assignee">{bead.assignee}</span>
-                        </>
-                      )}
-                      {bead.labels && bead.labels.length > 0 && (
-                        <>
-                          <span className="kanban-card-spacer" />
-                          <Icon name="tag" size={10} className="kanban-card-icon" />
-                          {bead.labels.slice(0, 3).map((label) => (
-                            <LabelBadge key={label} label={label} />
-                          ))}
-                          {bead.labels.length > 3 && (
-                            <span className="kanban-card-labels-more">+{bead.labels.length - 3}</span>
-                          )}
-                        </>
-                      )}
-                    </div>
+                    {bead.labels && bead.labels.length > 0 && (
+                      <div className="kanban-card-meta">
+                        {bead.labels.slice(0, 2).map((label) => (
+                          <LabelBadge key={label} label={label} />
+                        ))}
+                        {bead.labels.length > 2 && (
+                          <span className="kanban-card-labels-more">+{bead.labels.length - 2}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
                 {items.length === 0 && (

@@ -23,6 +23,7 @@ import {
 import { buildTree, TreeBead, TreeRollup } from "../../graph/tree";
 import { GRAPHIC_TOKENS } from "../theme/tokens";
 import { Dropdown, DropdownItem } from "../common/Dropdown";
+import { Avatar } from "../common/Avatar";
 import { LabelBadge } from "../common/LabelBadge";
 import { PriorityIcon } from "../common/PriorityIcon";
 import { StatusRing } from "../common/StatusRing";
@@ -190,22 +191,6 @@ function DepChip({
         )}
       </svg>
       {ids.length}
-    </span>
-  );
-}
-
-/** Assignee initials, Linear's avatar mapped to bd's plain-string assignee. */
-function Avatar({ assignee }: { assignee: string }): React.ReactElement {
-  const initials = assignee
-    .split(/[\s._@-]+/)
-    .filter(Boolean)
-    .map((word) => word[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-  return (
-    <span className="lin-avatar" title={assignee}>
-      {initials || "?"}
     </span>
   );
 }

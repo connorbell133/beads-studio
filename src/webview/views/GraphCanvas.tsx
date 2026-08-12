@@ -657,10 +657,10 @@ export function GraphCanvas({
         onFitSelection={() => fitTarget && frameNode(fitTarget)}
         canFit={Boolean(fit)}
         canFitSelection={Boolean(fitTarget)}
-      />
-
-      {/* The same filter row the Issues list carries, under the toolbar. */}
-      <BeadFilterBar beads={beads} filters={filters} onChange={setFilters} />
+      >
+        {/* The same filter controls the Issues list carries, on the same row. */}
+        <BeadFilterBar beads={beads} filters={filters} onChange={setFilters} />
+      </GraphToolbar>
 
       {view && <DensityNotice view={view} onOverride={setDensityOverride} />}
 

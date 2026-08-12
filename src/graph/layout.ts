@@ -153,7 +153,10 @@ export function layoutGraph(
     };
   });
 
-  return { positions, edges: routed, bounds: boundsOf(nodes, positions, padding) };
+  // Bounds cover the edge routes too: dagre arcs a back-edge or a containment
+  // tether well outside the node envelope, and a viewBox that ignores those
+  // points letterboxes the picture off-centre while the arcs bleed into it.
+  return { positions, edges: routed, bounds: boundsOf(nodes, positions, padding, routed) };
 }
 
 /**
@@ -171,7 +174,8 @@ export function layoutBounds(
 function boundsOf(
   nodes: GraphLayoutNode[],
   positions: Map<string, GraphLayoutPosition>,
-  padding: number
+  padding: number,
+  edgePaths: GraphLayoutEdgePath[] = []
 ): GraphLayoutBounds {
   if (nodes.length === 0) {
     return { minX: 0, minY: 0, width: 0, height: 0 };
@@ -189,6 +193,15 @@ function boundsOf(
     minY = Math.min(minY, position.y);
     maxX = Math.max(maxX, position.x + node.width);
     maxY = Math.max(maxY, position.y + node.height);
+  }
+
+  for (const path of edgePaths) {
+    for (const point of path.points) {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    }
   }
 
   if (!Number.isFinite(minX)) return { minX: 0, minY: 0, width: 0, height: 0 };
