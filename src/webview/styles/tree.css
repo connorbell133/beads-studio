@@ -1,0 +1,198 @@
+/* Tree mode for the Issues list.
+ *
+ * Hierarchy is drawn twice on purpose: indentation carries depth as distance,
+ * and the connector line carries it as a mark. A high-contrast theme may redraw
+ * or drop the line - the indent survives that, so depth is never lost.
+ *
+ * Colour follows the token rule: hue only in dots, bars and borders, every
+ * label in a text-safe token. See src/webview/theme/tokens.ts. */
+
+.tree-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+/* The label keeps the flat list's id-over-title stack and its truncation. */
+.tree-cell-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+/* The connector: a vertical run down the parent's indent with an elbow into
+   the row. Decorative - depth is already in the indent - so it is hidden from
+   assistive tech and surrendered to system colours in forced-colors. */
+.tree-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: var(--vscode-tree-indentGuidesStroke, var(--vscode-panel-border));
+  opacity: 0.8;
+}
+
+.tree-rail::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 6px;
+  height: 1px;
+  background-color: inherit;
+}
+
+.tree-toggle {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  cursor: pointer;
+}
+
+.tree-toggle:hover {
+  color: var(--vscode-textLink-foreground);
+}
+
+/* Leaves reserve the chevron's width so sibling titles start on one line. */
+.tree-toggle-spacer {
+  flex: 0 0 auto;
+  width: 16px;
+}
+
+.tree-chevron {
+  transition: transform var(--transition-fast);
+}
+
+/* Context rows: kept because a descendant matched the filter, not because they
+   matched. Dimmed, not hidden - a match under the wrong epic is a finding. */
+.tree-cell.tree-context .bead-title,
+.tree-cell.tree-context .bead-id {
+  opacity: 0.65;
+}
+
+.bead-row.tree-context-row .status-cell,
+.bead-row.tree-context-row .priority-cell,
+.bead-row.tree-context-row .type-cell {
+  opacity: 0.65;
+}
+
+/* A parent chain that loops back on itself. Words, not a colour, because this
+   is a diagnostic and has to survive being printed in one hue. */
+.tree-cycle-flag {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  font-size: 0.85em;
+  color: var(--vscode-charts-red);
+  border: 1px solid currentColor;
+  border-radius: var(--border-radius);
+}
+
+/* ---- Child completion ---------------------------------------------------
+   A bar for speed of scanning, the fraction for everything the bar cannot say.
+   The fraction is the accessible label, so progress is never colour alone. */
+.tree-rollup {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.tree-rollup-track {
+  display: block;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background-color: var(--vscode-panel-border);
+  overflow: hidden;
+}
+
+.tree-rollup-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background-color: var(--tree-rollup-hue, var(--vscode-charts-green));
+  transition: width var(--transition-normal);
+}
+
+.tree-rollup-label {
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ---- Orphans lane -------------------------------------------------------
+   Parentless, childless work. Collapsed by default and reporting its own count,
+   because on a healthy project it is empty and on an unhealthy one its size is
+   the thing worth seeing. */
+.tree-lane .tree-lane-header td {
+  padding: 0;
+  background-color: var(--vscode-sideBar-background);
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.tree-lane-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-lane-toggle:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.tree-lane-title {
+  font-weight: 600;
+}
+
+.tree-lane-count {
+  padding: 0 5px;
+  border-radius: var(--border-radius);
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tree-lane-hint {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-chevron,
+  .tree-rollup-fill {
+    transition: none;
+  }
+}
+
+/* Decorative fills have no meaning the system palette needs to keep; the
+   indent, the fraction and the count carry everything. */
+@media (forced-colors: active) {
+  .tree-rollup-track,
+  .tree-rollup-fill {
+    forced-color-adjust: none;
+    background-color: Canvas;
+    border: 1px solid CanvasText;
+  }
+
+  .tree-rollup-fill {
+    background-color: CanvasText;
+  }
+}
