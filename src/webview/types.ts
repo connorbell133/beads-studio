@@ -172,40 +172,42 @@ export const STATUS_LABELS: Record<string, string> = {
   hooked: "hooked",
 };
 
-export const PRIORITY_COLORS: Record<BeadPriority, string> = {
-  0: "#ff4444", // Critical - red
-  1: "#ff8800", // High - orange
-  2: "#ffcc00", // Medium - yellow
-  3: "#44aa44", // Low - green
-  4: "#888888", // None - gray
-};
+// ---------------------------------------------------------------------------
+// Colour.
+//
+// Every value below is a VS Code theme token, never a literal. The palette this
+// replaced was bd's dark-TUI colours applied against every theme, which left
+// `pinned` and `hooked` at 1.98:1 against a white editor background.
+//
+// Which token is safe where was measured, not assumed - see
+// theme/tokens.ts and theme/__tests__/contrast.test.ts. Text reads in a
+// text-safe token; hue lives in dots, borders, icons and bars, where the 3:1
+// graphic bar applies.
+// ---------------------------------------------------------------------------
 
-export const PRIORITY_TEXT_COLORS: Record<BeadPriority, string> = {
-  0: "#ffffff", // white on red
-  1: "#ffffff", // white on orange
-  2: "#1a1a1a", // dark on yellow
-  3: "#ffffff", // white on green
-  4: "#ffffff", // white on gray
+import { GRAPHIC_TOKENS, statusHue, typeHue } from "./theme/tokens";
+
+export { statusHue, typeHue, priorityStyle, priorityLabel, TEXT_TOKENS, GRAPHIC_TOKENS } from "./theme/tokens";
+
+/** Accent hue per priority. Used for bars and rails, never behind label text. */
+export const PRIORITY_COLORS: Record<BeadPriority, string> = {
+  0: GRAPHIC_TOKENS.danger,
+  1: GRAPHIC_TOKENS.warning,
+  2: GRAPHIC_TOKENS.info,
+  3: GRAPHIC_TOKENS.muted,
+  4: GRAPHIC_TOKENS.neutral,
 };
 
 // Colors for unknown/undefined priority (shown as "P?")
-export const UNKNOWN_PRIORITY_COLOR = "#6b7280"; // gray
-export const UNKNOWN_PRIORITY_TEXT_COLOR = "#ffffff"; // white
+export const UNKNOWN_PRIORITY_COLOR = GRAPHIC_TOKENS.neutral;
 
-// Colors for the new statuses follow bd's own palette (internal/ui/styles.go,
-// dark variants) so the extension reads the same as the CLI.
-export const STATUS_COLORS: Record<string, string> = {
-  open: "#10b981",      // green - ready to work
-  in_progress: "#3b82f6", // blue
-  blocked: "#ef4444",   // red
-  deferred: "#6c7680",  // muted slate - on ice (bd ColorMuted)
-  closed: "#6b7280",    // gray
-  pinned: "#d2a6ff",    // violet (bd ColorStatusPinned)
-  hooked: "#59c2ff",    // sky (bd ColorStatusHooked)
-};
+/** Accent hue per status, resolved through the measured token mapping. */
+export const STATUS_COLORS: Record<string, string> = Object.fromEntries(
+  BUILT_IN_STATUSES.map((status) => [status, statusHue(status)])
+);
 
 // Color for statuses with no entry above (user-defined via status.custom)
-export const UNKNOWN_STATUS_COLOR = "#888888";
+export const UNKNOWN_STATUS_COLOR = GRAPHIC_TOKENS.neutral;
 
 // bd's built-in issue types (internal/types/types.go), plus `merge-request`,
 // which bd demoted to a custom type but which existing databases still contain.
@@ -244,43 +246,12 @@ export const TYPE_LABELS: Record<string, string> = {
   "merge-request": "merge-request",
 };
 
-export const TYPE_COLORS: Record<string, string> = {
-  bug: "#dc2626",           // red
-  feature: "#16a34a",       // green
-  task: "#eab308",          // yellow
-  epic: "#9333ea",          // purple
-  chore: "#2563eb",         // blue
-  decision: "#ea580c",      // orange
-  message: "#0891b2",       // cyan
-  molecule: "#14b8a6",      // teal
-  gate: "#78716c",          // stone - coordination infra
-  spike: "#c026d3",         // fuchsia - investigation
-  story: "#65a30d",         // lime
-  milestone: "#db2777",     // pink
-  event: "#64748b",         // slate - internal audit trail
-  "merge-request": "#0ea5e9", // sky blue
-};
+export const TYPE_COLORS: Record<string, string> = Object.fromEntries(
+  (Object.keys(TYPE_LABELS) as string[]).map((type) => [type, typeHue(type)])
+);
 
-export const TYPE_TEXT_COLORS: Record<string, string> = {
-  bug: "#ffffff",
-  feature: "#ffffff",
-  task: "#1a1a1a",          // dark on yellow
-  epic: "#ffffff",
-  chore: "#ffffff",
-  decision: "#ffffff",
-  message: "#ffffff",
-  molecule: "#ffffff",
-  gate: "#ffffff",
-  spike: "#ffffff",
-  story: "#ffffff",
-  milestone: "#ffffff",
-  event: "#ffffff",
-  "merge-request": "#ffffff",
-};
-
-// Colors for unknown/undefined type (shown with question mark icon)
-export const UNKNOWN_TYPE_COLOR = "#888888"; // gray
-export const UNKNOWN_TYPE_TEXT_COLOR = "#ffffff"; // white
+// Color for unknown/undefined type (shown with question mark icon)
+export const UNKNOWN_TYPE_COLOR = GRAPHIC_TOKENS.neutral;
 
 // Sort order for type display (lower = first)
 // Planning scope first (epic/milestone/story), then work items, then the

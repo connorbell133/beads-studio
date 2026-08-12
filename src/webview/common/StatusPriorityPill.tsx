@@ -1,8 +1,9 @@
 /**
  * StatusPriorityPill Component
  *
- * Displays status and priority as a joined pill badge.
- * Used in dependency lists for consistent rendering.
+ * Status and priority together, used in dependency lists where space is tight.
+ * Follows the same rule as the standalone badges: hue in the dot, rank in the
+ * numeral, label text at full editor contrast.
  */
 
 import React from "react";
@@ -10,12 +11,9 @@ import {
   BeadStatus,
   BeadPriority,
   STATUS_LABELS,
-  STATUS_COLORS,
-  UNKNOWN_STATUS_COLOR,
-  PRIORITY_COLORS,
-  PRIORITY_TEXT_COLORS,
-  UNKNOWN_PRIORITY_COLOR,
-  UNKNOWN_PRIORITY_TEXT_COLOR,
+  priorityLabel,
+  priorityStyle,
+  statusHue,
 } from "../types";
 
 interface StatusPriorityPillProps {
@@ -30,37 +28,27 @@ export function StatusPriorityPill({
   // Need at least one value to render
   if (!status && priority === undefined) return null;
 
-  // Custom statuses have no label/color entry; fall back to the raw text.
+  // Custom statuses have no label entry; fall back to the raw text.
   const statusLabel = status ? (STATUS_LABELS[status] ?? status) : null;
-  const statusColor = status ? (STATUS_COLORS[status] ?? UNKNOWN_STATUS_COLOR) : null;
-
-  const priorityLabel = priority !== undefined ? `P${priority}` : "P?";
-  const priorityBgColor = priority !== undefined
-    ? PRIORITY_COLORS[priority]
-    : UNKNOWN_PRIORITY_COLOR;
-  const priorityTextColor = priority !== undefined
-    ? PRIORITY_TEXT_COLORS[priority]
-    : UNKNOWN_PRIORITY_TEXT_COLOR;
+  const rank = priorityStyle(priority);
 
   return (
     <span className="status-priority-pill">
       {status && (
-        <span
-          className="pill-status"
-          style={{ backgroundColor: statusColor || undefined }}
-        >
+        <span className="pill-status">
+          <span
+            className="status-dot"
+            style={{ backgroundColor: statusHue(status) }}
+            aria-hidden="true"
+          />
           {statusLabel}
         </span>
       )}
       <span
         className="pill-priority"
-        style={{
-          backgroundColor: priorityBgColor,
-          color: priorityTextColor,
-          borderRadius: status ? undefined : "var(--border-radius)",
-        }}
+        style={{ color: rank.color, fontWeight: rank.fontWeight }}
       >
-        {priorityLabel}
+        {priorityLabel(priority)}
       </span>
     </span>
   );

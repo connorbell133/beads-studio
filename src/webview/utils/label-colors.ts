@@ -108,6 +108,10 @@ export function getLabelColorStyle(label: string): LabelColorStyle {
   const [r, g, b] = hslToRgb(hue, saturation, lightness);
   const useDarkText = shouldUseDarkText(r, g, b);
 
+  // The two literals here are the matched foreground for a background this
+  // function just generated, chosen by measuring that background's luminance.
+  // They are not part of the semantic palette and must not be themed
+  // independently: the pair is what guarantees the label stays readable.
   return {
     backgroundColor: `hsl(${hue}, ${saturation}%, ${lightness}%)`,
     color: useDarkText ? "#1a1a1a" : "#ffffff",

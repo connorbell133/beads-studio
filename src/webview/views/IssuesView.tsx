@@ -729,7 +729,7 @@ export function IssuesView({
             <FilterChip
               key={`assignee-${assignee}`}
               label={assignee === "__unassigned__" ? "Unassigned" : assignee}
-              accentColor="#6b7280"
+              accentColor={UNKNOWN_STATUS_COLOR}
               onRemove={() => removeAssigneeFilter(assignee)}
             />
           ))}
@@ -737,7 +737,7 @@ export function IssuesView({
             <FilterChip
               key={`label-${label}`}
               label={label === "__unlabeled__" ? "Unlabeled" : label}
-              accentColor={label === "__unlabeled__" ? "#6b7280" : getLabelColorStyle(label).backgroundColor}
+              accentColor={label === "__unlabeled__" ? UNKNOWN_STATUS_COLOR : getLabelColorStyle(label).backgroundColor}
               onRemove={() => removeLabelFilter(label)}
             />
           ))}

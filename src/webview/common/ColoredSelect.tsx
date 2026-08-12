@@ -62,7 +62,7 @@ export function ColoredSelect<T extends string | number>({
           className="colored-select-badge"
           style={{
             backgroundColor: selectedOption.color,
-            color: selectedOption.textColor || "#ffffff",
+            color: selectedOption.textColor || "var(--vscode-foreground)",
           }}
         >
           {selectedOption.label}
@@ -83,7 +83,7 @@ export function ColoredSelect<T extends string | number>({
       className="colored-select-badge"
       style={{
         backgroundColor: option.color,
-        color: option.textColor || "#ffffff",
+        color: option.textColor || "var(--vscode-foreground)",
       }}
     >
       {option.label}
