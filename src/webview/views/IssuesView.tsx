@@ -20,13 +20,17 @@ import {
   getFilteredRowModel,
   getFacetedRowModel,
   getFacetedUniqueValues,
+  getExpandedRowModel,
   flexRender,
   createColumnHelper,
   ColumnFiltersState,
   ColumnResizeMode,
+  ColumnSizingState,
+  Row,
 } from "@tanstack/react-table";
 import {
   Bead,
+  BeadsGraphModel,
   BeadStatus,
   BeadPriority,
   BeadType,
@@ -41,13 +45,15 @@ import {
   sortLabels,
   vscode,
 } from "../types";
+import { buildTree, projectKeyFor, TreeBead, TreeRollup } from "../../graph/tree";
+import { GRAPHIC_TOKENS } from "../theme/tokens";
 import { StatusBadge } from "../common/StatusBadge";
 import { PriorityBadge } from "../common/PriorityBadge";
 import { TypeBadge } from "../common/TypeBadge";
 import { TypeIcon } from "../common/TypeIcon";
 import { LabelBadge } from "../common/LabelBadge";
 import { FilterChip } from "../common/FilterChip";
-import { Table, Kanban } from "lucide-react";
+import { Table, Kanban, ListTree } from "lucide-react";
 import { ErrorMessage } from "../common/ErrorMessage";
 import { Loading } from "../common/Loading";
 import { Dropdown, DropdownItem } from "../common/Dropdown";
@@ -61,6 +67,12 @@ import { KanbanBoard } from "./KanbanBoard";
 
 interface IssuesViewProps {
   beads: Bead[];
+  /**
+   * The derived graph, when the host has sent one. Tree mode reads hierarchy
+   * from here rather than hydrating each bead's dependencies; without it the
+   * panel stays in flat list mode and the tree toggle is disabled.
+   */
+  graph?: BeadsGraphModel | null;
   loading: boolean;
   error: string | null;
   selectedBeadId: string | null;
@@ -68,6 +80,66 @@ interface IssuesViewProps {
   onSelectBead: (beadId: string) => void;
   onUpdateBead: (beadId: string, updates: Partial<Bead>) => void;
   onRetry: () => void;
+}
+
+type ViewMode = "table" | "tree" | "board";
+
+const VIEW_MODES: readonly ViewMode[] = ["table", "tree", "board"];
+
+/** Indent per tree level, in px. Depth reads as distance, not only as a line. */
+const TREE_INDENT = 14;
+
+/** Stable empty data so the tree tables do not rebuild their row model in list mode. */
+const EMPTY_ROWS: Bead[] = [];
+
+/** Reserved key for the orphans lane inside the persisted expanded record. */
+const ORPHAN_LANE_KEY = "__orphans__";
+
+/**
+ * Collapsed points right, expanded points down - the tree convention VS Code's
+ * own explorer uses. The shared ChevronIcon only does the dropdown flip.
+ */
+function TreeChevron({ open }: { open: boolean }): React.ReactElement {
+  return (
+    <svg
+      className="tree-chevron"
+      width="10"
+      height="10"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      style={{ transform: open ? "none" : "rotate(-90deg)" }}
+    >
+      <path fill="currentColor" d="M4.5 5.5L8 9l3.5-3.5L13 7l-5 5-5-5z" />
+    </svg>
+  );
+}
+
+/**
+ * Child completion as a partly-filled bar plus its fraction.
+ *
+ * An unfinished epic is what a planner scans for, and a bar is read faster than
+ * a parsed fraction - but the fraction stays visible so completion is never
+ * carried by colour alone.
+ */
+function RollupBar({ rollup }: { rollup: TreeRollup }): React.ReactElement {
+  return (
+    <span className="tree-rollup" title={`${rollup.label} children closed`}>
+      <span className="tree-rollup-track">
+        <span
+          className="tree-rollup-fill"
+          // The hue arrives as a custom property rather than as a background, so
+          // a forced-colors theme can still take the fill over.
+          style={
+            {
+              width: `${rollup.percent}%`,
+              "--tree-rollup-hue": GRAPHIC_TOKENS.success,
+            } as React.CSSProperties
+          }
+        />
+      </span>
+      <span className="tree-rollup-label">{rollup.label}</span>
+    </span>
+  );
 }
 
 // Issue types sorted by TYPE_SORT_ORDER (epic first)
@@ -106,6 +178,7 @@ const columnHelper = createColumnHelper<Bead>();
 
 export function IssuesView({
   beads,
+  graph,
   loading,
   error,
   selectedBeadId,
@@ -114,12 +187,15 @@ export function IssuesView({
   onUpdateBead,
   onRetry,
 }: IssuesViewProps): React.ReactElement {
-  // Persisted column state (sorting, visibility, order)
+  // Persisted column state (sorting, visibility, order, view mode, expansion)
   const defaultVisibility = {
     labels: false,
     assignee: false,
     estimate: false,
   };
+  // The webview is not told the project id, so the bead-id prefix stands in for
+  // it. Tree expansion is a per-project fact and must not cross over.
+  const projectKey = useMemo(() => projectKeyFor(beads), [beads]);
   const {
     sorting,
     setSorting,
@@ -127,10 +203,17 @@ export function IssuesView({
     setColumnVisibility,
     columnOrder,
     setColumnOrder,
+    viewMode: persistedViewMode,
+    setViewMode,
+    expanded,
+    setExpanded,
     resetVisibility,
   } = useColumnState({
     defaultSorting: [{ id: "updatedAt", desc: true }],
     defaultVisibility,
+    defaultViewMode: "table",
+    viewModes: VIEW_MODES,
+    projectKey,
   });
 
   // Non-persisted TanStack state
@@ -144,9 +227,26 @@ export function IssuesView({
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [isResizing, setIsResizing] = useState(false);
+  // Shared across the list and tree tables so a column keeps its width when the
+  // mode is toggled.
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
 
   // UI state
-  const [viewMode, setViewMode] = useState<"table" | "board">("table");
+  // Tree mode needs the graph. Without one the persisted mode falls back rather
+  // than rendering an empty hierarchy.
+  const viewMode: ViewMode =
+    persistedViewMode === "tree" && !graph ? "table" : (persistedViewMode as ViewMode);
+  const isTree = viewMode === "tree";
+  // The lane's open state rides along in the expanded record so it persists per
+  // project with everything else. TanStack only reads keys that are row ids, so
+  // a reserved one is inert there.
+  const expandedRows = expanded === true ? {} : expanded;
+  const orphansOpen = !!globalFilter || expandedRows[ORPHAN_LANE_KEY] === true;
+  const toggleOrphans = () =>
+    setExpanded((prev) => {
+      const rows = prev === true ? {} : prev;
+      return { ...rows, [ORPHAN_LANE_KEY]: !rows[ORPHAN_LANE_KEY] };
+    });
   const [activePreset, setActivePreset] = useState<string>(DEFAULT_PRESET_ID);
   const [filterBarOpen, setFilterBarOpen] = useState(true);
   const [filterMenuOpen, setFilterMenuOpen] = useState<string | null>(null);
@@ -263,22 +363,72 @@ export function IssuesView({
         header: "Title",
         size: 200,
         minSize: 100,
-        cell: (info) => (
-          <>
+        cell: (info) => {
+          const bead = info.row.original as TreeBead<Bead>;
+          const label = (
+            <>
+              <span
+                className={`bead-id ${copiedId === bead.id ? "copied" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopyId(bead.id);
+                  onSelectBead(bead.id);
+                }}
+                title={copiedId === bead.id ? "Copied!" : "Click to copy"}
+              >
+                {bead.id}
+              </span>
+              <span className="bead-title">{info.getValue()}</span>
+            </>
+          );
+
+          // List mode rows carry none of these, so they render exactly the
+          // markup they always did - no wrapper, no reflow.
+          const depth = info.row.depth;
+          const canExpand = info.row.getCanExpand();
+          if (!canExpand && depth === 0 && !bead.treeRollup && !bead.treeContext) {
+            return label;
+          }
+
+          const isExpanded = info.row.getIsExpanded();
+          return (
             <span
-              className={`bead-id ${copiedId === info.row.original.id ? "copied" : ""}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCopyId(info.row.original.id);
-                onSelectBead(info.row.original.id);
-              }}
-              title={copiedId === info.row.original.id ? "Copied!" : "Click to copy"}
+              className={`tree-cell${bead.treeContext ? " tree-context" : ""}`}
+              style={{ paddingLeft: depth * TREE_INDENT }}
             >
-              {info.row.original.id}
+              {depth > 0 && (
+                <span
+                  className="tree-rail"
+                  aria-hidden="true"
+                  style={{ left: (depth - 1) * TREE_INDENT + 6 }}
+                />
+              )}
+              {canExpand ? (
+                <button
+                  type="button"
+                  className="tree-toggle"
+                  aria-expanded={isExpanded}
+                  aria-label={`${isExpanded ? "Collapse" : "Expand"} ${bead.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    info.row.toggleExpanded();
+                  }}
+                >
+                  <TreeChevron open={isExpanded} />
+                </button>
+              ) : (
+                <span className="tree-toggle-spacer" aria-hidden="true" />
+              )}
+              <span className="tree-cell-label">{label}</span>
+              {bead.treeCycle && (
+                <span className="tree-cycle-flag" title="This bead's parent chain loops back to it">
+                  parent loop
+                </span>
+              )}
+              {bead.treeRollup && <RollupBar rollup={bead.treeRollup} />}
             </span>
-            <span className="bead-title">{info.getValue()}</span>
-          </>
-        ),
+          );
+        },
       }),
       columnHelper.accessor("status", {
         header: "Status",
@@ -376,12 +526,14 @@ export function IssuesView({
       globalFilter,
       columnVisibility,
       columnOrder,
+      columnSizing,
     },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
     onColumnVisibilityChange: setColumnVisibility,
     onColumnOrderChange: setColumnOrder,
+    onColumnSizingChange: setColumnSizing,
     globalFilterFn: (row, _columnId, filterValue: string) => {
       const search = filterValue.toLowerCase();
       const bead = row.original;
@@ -400,6 +552,51 @@ export function IssuesView({
     columnResizeMode: "onChange" as ColumnResizeMode,
     enableColumnResizing: true,
   });
+
+  // The flat table stays the one place filtering, faceting and counting happen.
+  // Tree mode reads its match set from it rather than re-deciding the predicate,
+  // so the two modes can never disagree about what a filter means.
+  const filteredRows = table.getFilteredRowModel().rows;
+  const tree = useMemo(() => {
+    if (!isTree) return null;
+    return buildTree(beads, graph, { matched: filteredRows.map((row) => row.original.id) });
+  }, [isTree, beads, graph, filteredRows]);
+
+  const treeShared = {
+    columns,
+    state: { sorting, columnVisibility, columnOrder, columnSizing },
+    onSortingChange: setSorting,
+    onColumnVisibilityChange: setColumnVisibility,
+    onColumnOrderChange: setColumnOrder,
+    onColumnSizingChange: setColumnSizing,
+    // No filtering here: the rows arrive already filtered, with context parents
+    // deliberately kept. Filtering again would drop exactly those.
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    columnResizeMode: "onChange" as ColumnResizeMode,
+    enableColumnResizing: true,
+  };
+
+  const treeTable = useReactTable<Bead>({
+    ...treeShared,
+    data: tree?.roots ?? EMPTY_ROWS,
+    // A search opens the tree: a hit buried under a collapsed epic reads as no
+    // hit at all. Clearing the search restores what the user had open.
+    state: { ...treeShared.state, expanded: globalFilter ? true : expanded },
+    onExpandedChange: setExpanded,
+    getSubRows: (row) => (row as TreeBead<Bead>).subRows,
+    getExpandedRowModel: getExpandedRowModel(),
+  });
+
+  // The orphans lane is its own table so it sorts independently and cannot be
+  // mixed back into the hierarchy by a sort. Both render into one <table>, so
+  // the columns stay aligned.
+  const orphanTable = useReactTable<Bead>({
+    ...treeShared,
+    data: tree?.orphans ?? EMPTY_ROWS,
+  });
+
+  const activeTable = isTree ? treeTable : table;
 
   const handleCopyId = useCallback((beadId: string) => {
     vscode.postMessage({ type: "copyBeadId", beadId });
@@ -543,8 +740,38 @@ export function IssuesView({
     setActivePreset("all");
   };
 
-  const filteredCount = table.getFilteredRowModel().rows.length;
+  const filteredCount = filteredRows.length;
   const totalCount = beads.length;
+  const columnSpan = activeTable.getVisibleLeafColumns().length + 1;
+
+  // One row renderer for the list, the tree, and the orphans lane, so the three
+  // cannot drift in selection, hover, or cell markup.
+  const renderRow = (row: Row<Bead>): React.ReactElement => {
+    const bead = row.original as TreeBead<Bead>;
+    return (
+      <tr
+        key={row.id}
+        onClick={() => onSelectBead(bead.id)}
+        className={`bead-row ${bead.id === selectedBeadId ? "selected" : ""}${
+          isTree && bead.treeContext ? " tree-context-row" : ""
+        }`}
+        aria-level={isTree ? row.depth + 1 : undefined}
+        onMouseEnter={(e) => handleRowMouseEnter(e, bead.id)}
+        onMouseLeave={handleRowMouseLeave}
+      >
+        {row.getVisibleCells().map((cell) => (
+          <td
+            key={cell.id}
+            className={`${cell.column.id}-cell`}
+            style={{ width: cell.column.getSize() }}
+          >
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </td>
+        ))}
+        <td className="row-spacer" />
+      </tr>
+    );
+  };
 
   // Get faceted counts for filters (counts based on OTHER active filters, not this column)
   const statusFacets = table.getColumn("status")?.getFacetedUniqueValues() ?? new Map();
@@ -668,6 +895,14 @@ export function IssuesView({
             title="Table view"
           >
             <Table size={14} />
+          </button>
+          <button
+            className={isTree ? "active" : ""}
+            onClick={() => setViewMode("tree")}
+            disabled={!graph}
+            title={graph ? "Tree view" : "Tree view needs the dependency graph"}
+          >
+            <ListTree size={14} />
           </button>
           <button
             className={viewMode === "board" ? "active" : ""}
@@ -877,22 +1112,22 @@ export function IssuesView({
         />
       )}
 
-      {/* Table */}
-      {!error && viewMode === "table" && (
+      {/* Table - flat list, or the graph-derived tree */}
+      {!error && viewMode !== "board" && (
         <div className="beads-table-wrapper">
           {loading && (
             <div className="issues-loading-state">
               <Loading />
             </div>
           )}
-          <div className={`beads-table-container ${table.getState().columnSizingInfo.isResizingColumn ? "resizing" : ""}`}>
+          <div className={`beads-table-container ${activeTable.getState().columnSizingInfo.isResizingColumn ? "resizing" : ""}`}>
             <table
               className="beads-table"
-              style={{ minWidth: table.getCenterTotalSize() }}
+              style={{ minWidth: activeTable.getCenterTotalSize() }}
               onContextMenu={(e) => e.preventDefault()}
             >
               <thead>
-                {table.getHeaderGroups().map((headerGroup) => (
+                {activeTable.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
                       <th
@@ -922,7 +1157,7 @@ export function IssuesView({
                         onDrop={(e) => {
                           e.preventDefault();
                           if (draggedColumn && draggedColumn !== header.id) {
-                            const currentOrder = table.getAllLeafColumns().map((c) => c.id);
+                            const currentOrder = activeTable.getAllLeafColumns().map((c) => c.id);
                             const dragIdx = currentOrder.indexOf(draggedColumn);
                             const dropIdx = currentOrder.indexOf(header.id);
                             const newOrder = [...currentOrder];
@@ -983,7 +1218,7 @@ export function IssuesView({
                       </button>
                       {columnMenuOpen && (
                         <div className="col-menu">
-                          {table.getAllLeafColumns().map((column) => (
+                          {activeTable.getAllLeafColumns().map((column) => (
                             <label key={column.id}>
                               <input
                                 type="checkbox"
@@ -1012,38 +1247,38 @@ export function IssuesView({
                 ))}
               </thead>
               <tbody>
-                {table.getRowModel().rows.length === 0 ? (
+                {activeTable.getRowModel().rows.length === 0 && (!tree || tree.orphans.length === 0) ? (
                   <tr>
-                    <td
-                      colSpan={table.getVisibleLeafColumns().length + 1}
-                      className="empty-row"
-                    >
+                    <td colSpan={columnSpan} className="empty-row">
                       {loading ? "Loading..." : "No issues matching filter"}
                     </td>
                   </tr>
                 ) : (
-                  table.getRowModel().rows.map((row) => (
-                    <tr
-                      key={row.id}
-                      onClick={() => onSelectBead(row.original.id)}
-                      className={`bead-row ${row.original.id === selectedBeadId ? "selected" : ""}`}
-                      onMouseEnter={(e) => handleRowMouseEnter(e, row.original.id)}
-                      onMouseLeave={handleRowMouseLeave}
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <td
-                          key={cell.id}
-                          className={`${cell.column.id}-cell`}
-                          style={{ width: cell.column.getSize() }}
-                        >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      ))}
-                      <td className="row-spacer" />
-                    </tr>
-                  ))
+                  activeTable.getRowModel().rows.map(renderRow)
                 )}
               </tbody>
+              {/* Orphans lane: parentless, childless work. Empty on a healthy
+                  project; when it is not, its size is the finding. */}
+              {isTree && tree && tree.orphans.length > 0 && (
+                <tbody className="tree-lane">
+                  <tr className="tree-lane-header">
+                    <td colSpan={columnSpan}>
+                      <button
+                        type="button"
+                        className="tree-lane-toggle"
+                        aria-expanded={orphansOpen}
+                        onClick={toggleOrphans}
+                      >
+                        <TreeChevron open={orphansOpen} />
+                        <span className="tree-lane-title">Orphans</span>
+                        <span className="tree-lane-count">{tree.orphans.length}</span>
+                        <span className="tree-lane-hint">no parent epic</span>
+                      </button>
+                    </td>
+                  </tr>
+                  {orphansOpen && orphanTable.getRowModel().rows.map(renderRow)}
+                </tbody>
+              )}
             </table>
           </div>
           {/* Filtered count overlay */}

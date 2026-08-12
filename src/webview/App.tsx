@@ -182,6 +182,7 @@ export function App(): React.ReactElement {
         return (
           <IssuesView
             beads={visibleBeads}
+            graph={state.graph}
             loading={state.loading}
             error={state.error}
             selectedBeadId={state.selectedBeadId}
