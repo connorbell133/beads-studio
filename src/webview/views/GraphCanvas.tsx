@@ -120,6 +120,9 @@ export interface GraphCanvasProps {
   className?: string;
 }
 
+/** Screen pixels a pointer may wander before a press stops being a click. */
+const DRAG_SLOP_PX = 4;
+
 const NODE_WIDTH = 208;
 const NODE_HEIGHT = 52;
 /** Rolled nodes carry a third line: how many of their members have closed. */
@@ -433,24 +436,48 @@ export function GraphCanvas({
     [view, fit, drawn]
   );
 
-  const drag = useRef<{ pointerId: number; x: number; y: number; moved: boolean } | null>(null);
+  const drag = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    clientX: number;
+    clientY: number;
+    moved: boolean;
+  } | null>(null);
   /** A pan that ends over a node must not also select it. */
   const suppressClick = useRef(false);
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>): void => {
     if (event.button !== 0) return;
     const point = toGraphPoint(event.clientX, event.clientY);
-    drag.current = { pointerId: event.pointerId, x: point.x, y: point.y, moved: false };
-    event.currentTarget.setPointerCapture(event.pointerId);
+    // No pointer capture yet: a captured pointer's click retargets to the
+    // capturing svg, so capturing on press made node clicks land on the
+    // canvas and die. Capture starts when the drag does.
+    drag.current = {
+      pointerId: event.pointerId,
+      x: point.x,
+      y: point.y,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      moved: false,
+    };
   };
 
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>): void => {
     const state = drag.current;
     if (!state || state.pointerId !== event.pointerId) return;
+    // The pan-vs-click decision is made in screen pixels. Graph units shrink
+    // with zoom, so a graph-space threshold turned one pixel of hand jitter on
+    // a zoomed-out view into a "pan" that swallowed the click.
+    if (!state.moved) {
+      const jitter = Math.hypot(event.clientX - state.clientX, event.clientY - state.clientY);
+      if (jitter < DRAG_SLOP_PX) return;
+      state.moved = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
     const point = toGraphPoint(event.clientX, event.clientY);
     const dx = point.x - state.x;
     const dy = point.y - state.y;
-    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) state.moved = true;
     setViewBox((current) => (current ? { ...current, x: current.x - dx, y: current.y - dy } : current));
   };
 

@@ -38,9 +38,14 @@ export class BeadDetailsViewProvider extends BaseViewProvider {
     // Update context for conditional menu items
     vscode.commands.executeCommand("setContext", "beads.hasSelectedBead", true);
 
-    // Auto-expand the details panel
+    // Auto-expand the details panel. A resolved view can show itself; one
+    // that has never rendered (fresh window, sidebar on another container)
+    // has no view object, and only the focus command can conjure it - its
+    // ready message then loads the bead id stored above.
     if (this._view) {
       this._view.show(true); // true = preserve focus
+    } else {
+      await vscode.commands.executeCommand("beadsDetails.focus");
     }
 
     await this.loadData();
