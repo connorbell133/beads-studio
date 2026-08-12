@@ -48,6 +48,12 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: bun run test
+
       - name: Compile
         run: bun run compile
 
