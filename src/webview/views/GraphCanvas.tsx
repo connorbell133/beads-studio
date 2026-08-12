@@ -615,21 +615,28 @@ export function GraphCanvas({
           <g className="graph-canvas-edges">
             {view?.laidOut.edges.map((path) => {
               const edge = edgeByPair.get(`${path.source}\t${path.target}`);
-              const cycle = tangled.has(path.source) && tangled.has(path.target);
-              const offChain = Boolean(onChain && edge && !onChain(edge));
+              // Containment is not sequencing, so it never reads as an arrow:
+              // no head, thinner, dotted. It exists to stop an epic floating
+              // unattached to work that belongs to it, not to imply an order.
+              const contains = edge?.kind === "contains";
+              const cycle =
+                !contains && tangled.has(path.source) && tangled.has(path.target);
+              const offChain = Boolean(onChain && edge && !contains && !onChain(edge));
               const offMatch = find.active && !(matched.has(path.source) && matched.has(path.target));
               return (
                 <path
                   key={`${path.source}\t${path.target}`}
                   className={`graph-canvas-edge${cycle ? " in-cycle" : ""}${
-                    offChain || offMatch ? " dimmed" : ""
-                  }`}
+                    contains ? " contains" : ""
+                  }${offChain || offMatch ? " dimmed" : ""}`}
                   d={edgePath(path)}
                   fill="none"
                   stroke={cycle ? GRAPHIC_TOKENS.warning : GRAPHIC_TOKENS.neutral}
-                  strokeWidth={edge && edge.weight > 1 ? 2.5 : 1.25}
-                  strokeDasharray={cycle ? "5 4" : undefined}
-                  markerEnd={`url(#${markerId}-${cycle ? "arrow-cycle" : "arrow"})`}
+                  strokeWidth={contains ? 1 : edge && edge.weight > 1 ? 2.5 : 1.25}
+                  strokeDasharray={cycle ? "5 4" : contains ? "1 4" : undefined}
+                  markerEnd={
+                    contains ? undefined : `url(#${markerId}-${cycle ? "arrow-cycle" : "arrow"})`
+                  }
                 />
               );
             })}

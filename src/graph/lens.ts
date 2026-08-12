@@ -100,6 +100,19 @@ export interface LensEdge {
   weight: number;
   /** True when `weight > 1` or either end is a rolled node. */
   rolled: boolean;
+  /**
+   * What the line means.
+   *
+   * `blocks` is sequencing - the only kind that gates readiness, and the only
+   * kind drawn as a directed arrow. `contains` is an epic holding a member: it
+   * says nothing about order, and is drawn as a subdued tether so an epic is
+   * not left floating unattached to work that belongs to it.
+   *
+   * Keeping them one list with a kind, rather than two lists, means layout
+   * places containment and sequencing in one pass - an epic drawn far from its
+   * own members would be worse than not drawing the link at all.
+   */
+  kind: "blocks" | "contains";
 }
 
 export interface LensResult {
@@ -384,9 +397,28 @@ function finish(
         blocked,
         weight,
         rolled: weight > 1 || rolledIds.has(blocker) || rolledIds.has(blocked),
+        kind: "blocks" as const,
       };
     })
     .sort((a, b) => byId(a.blocker, b.blocker) || byId(a.blocked, b.blocked));
+
+  // Containment, but only where the members are drawn as themselves. A rolled
+  // epic has already absorbed its members, so a tether there would be a
+  // self-loop; and blast-radius answers "what does this reach", where a
+  // containment link is not part of the answer.
+  if (lens === "full") {
+    for (const id of context.ids) {
+      const parent = model.nodes[id]?.parent;
+      if (!parent || !shown.has(parent) || !shown.has(id)) continue;
+      edges.push({ blocker: parent, blocked: id, weight: 1, rolled: false, kind: "contains" });
+    }
+    edges.sort(
+      (a, b) =>
+        a.kind.localeCompare(b.kind) ||
+        byId(a.blocker, b.blocker) ||
+        byId(a.blocked, b.blocked)
+    );
+  }
 
   nodes.sort((a, b) => a.rank - b.rank || byId(a.id, b.id));
 

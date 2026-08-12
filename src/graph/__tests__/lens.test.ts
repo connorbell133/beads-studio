@@ -103,9 +103,12 @@ describe("full lens", () => {
     expect(result.edges).toEqual([]);
   });
 
-  it("draws blocking edges only, never parent-child", () => {
+  it("distinguishes containment from sequencing rather than conflating them", () => {
+    // parent-child is drawn, but as its own kind. Without it an epic floats
+    // unattached to its own members; drawn as a blocks arrow it would claim an
+    // order beads never recorded - and would put the epic in blockedCount.
     const { model, beads } = build(
-      [raw("epic", { issue_type: "epic" }), raw("child")],
+      [raw("epic", { issue_type: "epic" }), raw("child", { parent: "epic" })],
       [
         { from: "child", to: "epic", type: "parent-child" },
         { from: "child", to: "other", type: "related" },
@@ -115,6 +118,38 @@ describe("full lens", () => {
     const result = applyLens(model, beads, { lens: "full" });
 
     expect(ids(result)).toEqual(["child", "epic"]);
+    expect(result.edges).toHaveLength(1);
+    expect(result.edges[0]).toMatchObject({
+      blocker: "epic",
+      blocked: "child",
+      kind: "contains",
+    });
+    // Containment never gates readiness: the child has no blockers.
+    expect(model.nodes.child.blockedBy).toEqual([]);
+    expect(model.blocked).not.toContain("epic");
+  });
+
+  it("never draws related or discovered-from at all", () => {
+    const { model, beads } = build(
+      [raw("a"), raw("b")],
+      [
+        { from: "a", to: "b", type: "related" },
+        { from: "a", to: "b", type: "discovered-from" },
+      ]
+    );
+
+    expect(applyLens(model, beads, { lens: "full" }).edges).toEqual([]);
+  });
+
+  it("leaves containment out of the rollup, where members are already absorbed", () => {
+    // A tether from an epic to a member it has swallowed would be a self-loop.
+    const { model, beads } = build(
+      [raw("epic", { issue_type: "epic" }), raw("child", { parent: "epic" })],
+      [{ from: "child", to: "epic", type: "parent-child" }]
+    );
+
+    const result = applyLens(model, beads, { lens: "epic-rollup" });
+
     expect(result.edges).toEqual([]);
   });
 
@@ -245,7 +280,9 @@ describe("epic-rollup lens", () => {
 
     const result = applyLens(model, beads, { lens: "epic-rollup" });
 
-    expect(result.edges).toEqual([{ blocker: "e1", blocked: "e2", weight: 2, rolled: true }]);
+    expect(result.edges).toEqual([
+      { blocker: "e1", blocked: "e2", weight: 2, rolled: true, kind: "blocks" },
+    ]);
   });
 
   it("stands a bead on its own when its parent is a hidden type", () => {
@@ -434,7 +471,11 @@ describe("lens purity", () => {
 
     // e1 and t1 are unblocked (rank 0); loose and t2 both wait on t1 (rank 1).
     expect(result.nodes.map((node) => node.id)).toEqual(["e1", "t1", "loose", "t2"]);
-    expect(result.edges.map((edge) => [edge.blocker, edge.blocked])).toEqual([
+    expect(
+      result.edges
+        .filter((edge) => edge.kind === "blocks")
+        .map((edge) => [edge.blocker, edge.blocked])
+    ).toEqual([
       ["t1", "loose"],
       ["t1", "t2"],
     ]);

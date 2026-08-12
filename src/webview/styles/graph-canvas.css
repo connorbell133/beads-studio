@@ -385,3 +385,17 @@
   fill: var(--vscode-descriptionForeground);
   font-style: italic;
 }
+
+/* Containment tethers.
+ *
+ * An epic holding a member. Not sequencing, so no arrowhead and no part in
+ * chain isolation - hovering a bead highlights what blocks it, and containment
+ * is not an answer to that question. Kept faint so the blocking arrows stay the
+ * thing you read first. */
+.graph-canvas-edge.contains {
+  opacity: 0.4;
+}
+
+.graph-canvas-svg.isolating .graph-canvas-edge.contains {
+  opacity: 0.12;
+}
