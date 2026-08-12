@@ -6,8 +6,6 @@
 
 **Mission control for [Beads](https://github.com/gastownhall/beads) — the issue tracker built for AI coding agents.**
 
-[![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/connorbell133.beads-ui?label=VS%20Marketplace&color=3b82f6)](https://marketplace.visualstudio.com/items?itemName=connorbell133.beads-ui)
-[![Open VSX](https://img.shields.io/open-vsx/v/connorbell133/beads-ui?label=Open%20VSX&color=8b5cf6)](https://open-vsx.org/extension/connorbell133/beads-ui)
 [![CI](https://github.com/connorbell133/vscode-beads/actions/workflows/ci.yml/badge.svg)](https://github.com/connorbell133/vscode-beads/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-22c55e)](LICENSE)
 
