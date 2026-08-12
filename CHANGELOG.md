@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Dependency graph in an editor tab, opened with `Beads: Open Dependency Graph` or the Details panel's "View in graph"
+- Ready lane on the dashboard: what can be picked up now, ordered by how much each pick-up unblocks, with blocker chains shown inline
+- Dependency cycles reported in the Problems panel
+- "unblocks N" leverage and per-epic critical path
+- One bead selection shared across every surface, plus command-palette entries for ready work, the graph, find-in-graph, and tree mode
+- Keyboard navigation for graph and lane surfaces, and a visible focus state throughout
+
+### Fixed
+
+- Dashboard "Ready" and "Blocked" counts are derived from the dependency graph instead of counting status labels, so a bead with open blockers no longer counts as ready
+- Dependency edges from `bd list --json` were discarded because the extension expected the `bd show` shape; the extension had never loaded a graph
+- Gate and agent beads are now loaded so readiness can account for them, and filtered only where they are displayed
+- Beads with no priority set no longer render as P0 Critical on the Dolt backend
+- Badge colours are derived from VS Code theme tokens, fixing text that failed contrast on light and high-contrast themes
+- "View in graph" opened a view that was never registered and silently did nothing
+
 ## [0.14.1] - 2026-07-30
 
 ### Fixed
