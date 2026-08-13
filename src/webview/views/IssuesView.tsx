@@ -15,7 +15,6 @@ import {
   getFacetedRowModel,
   getFacetedUniqueValues,
   createColumnHelper,
-  ColumnFiltersState,
 } from "@tanstack/react-table";
 import {
   Bead,
@@ -106,20 +105,25 @@ export function IssuesView({
     setViewMode,
     expanded,
     setExpanded,
+    // Persisted, not local: a manual refresh empties the bead list, which drops
+    // the panel to <Loading /> and unmounts this view. Local filter state died
+    // there on every Refresh (vsbeads-fvl).
+    columnFilters,
+    setColumnFilters,
+    globalFilter,
+    setGlobalFilter,
+    activePreset,
+    setActivePreset,
   } = useColumnState({
     defaultViewMode: "list",
     viewModes: VIEW_MODES,
     projectKey,
-  });
-
-  // Non-persisted TanStack state
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([
     // Derived from the preset so the two cannot drift. A hardcoded list here
     // silently hid deferred/pinned/hooked beads while the UI showed the
     // "Not Closed" preset as active.
-    { id: "status", value: presetStatuses(DEFAULT_PRESET_ID) },
-  ]);
-  const [globalFilter, setGlobalFilter] = useState("");
+    defaultColumnFilters: [{ id: "status", value: presetStatuses(DEFAULT_PRESET_ID) }],
+    defaultActivePreset: DEFAULT_PRESET_ID,
+  });
 
   // Live width of the list, so right-side meta hiding tracks the panel as the
   // user drags the sidebar. A callback ref survives the wrapper mounting and
@@ -140,7 +144,6 @@ export function IssuesView({
 
   // UI state
   const viewMode = persistedViewMode as ViewMode;
-  const [activePreset, setActivePreset] = useState<string>(DEFAULT_PRESET_ID);
   // Closed until asked for: the preset dropdown lives in the toolbar, so the
   // second row only exists when there are custom chips to show.
   const [filterBarOpen, setFilterBarOpen] = useState(false);

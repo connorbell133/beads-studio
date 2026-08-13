@@ -3,9 +3,11 @@ import {
   SortingState,
   VisibilityState,
   ColumnOrderState,
+  ColumnFiltersState,
   ExpandedState,
 } from "@tanstack/react-table";
 import { vscode } from "../types";
+import { restoreFilterState } from "./filter-state";
 
 /**
  * Persisted column state for TanStack Table.
@@ -21,6 +23,16 @@ interface PersistedState {
   columnVisibility?: VisibilityState;
   columnOrder?: ColumnOrderState;
   viewMode?: string;
+  /**
+   * Filters persist for the same reason sorting does: a manual refresh clears
+   * the bead list, which drops the panel to <Loading /> and unmounts the view.
+   * Anything held in plain useState dies there, so hand-picked filters vanished
+   * on every Refresh while sorting - already persisted - survived.
+   */
+  columnFilters?: ColumnFiltersState;
+  globalFilter?: string;
+  /** Kept beside columnFilters; the two describe one selection and must agree. */
+  activePreset?: string;
   /**
    * Expanded rows, keyed by project. Tree shape is per-project, so one shared
    * blob would restore one project's expansion onto another's rows.
@@ -41,6 +53,10 @@ interface UseColumnStateOptions {
   viewModes?: readonly string[];
   /** Namespaces the expanded rows. Empty until the first beads arrive. */
   projectKey?: string;
+  /** Default column filters if none persisted */
+  defaultColumnFilters?: ColumnFiltersState;
+  /** Default preset id if none persisted */
+  defaultActivePreset?: string;
 }
 
 interface UseColumnStateReturn {
@@ -56,6 +72,15 @@ interface UseColumnStateReturn {
   /** Expanded tree rows for the current project. */
   expanded: ExpandedState;
   setExpanded: React.Dispatch<React.SetStateAction<ExpandedState>>;
+  /** Hand-picked column filters, surviving refresh and reload. */
+  columnFilters: ColumnFiltersState;
+  setColumnFilters: React.Dispatch<React.SetStateAction<ColumnFiltersState>>;
+  /** Free-text search across the list. */
+  globalFilter: string;
+  setGlobalFilter: React.Dispatch<React.SetStateAction<string>>;
+  /** Which status preset the filters came from; "" once hand-edited. */
+  activePreset: string;
+  setActivePreset: React.Dispatch<React.SetStateAction<string>>;
   /** Reset visibility to defaults */
   resetVisibility: () => void;
 }
@@ -94,6 +119,8 @@ export function useColumnState(options: UseColumnStateOptions = {}): UseColumnSt
     defaultViewMode = "",
     viewModes,
     projectKey = "",
+    defaultColumnFilters = [],
+    defaultActivePreset = "",
   } = options;
 
   // Load persisted state once on mount
@@ -109,6 +136,26 @@ export function useColumnState(options: UseColumnStateOptions = {}): UseColumnSt
 
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(
     savedState?.columnOrder ?? defaultOrder
+  );
+
+  const restoredFilters = useMemo(
+    () =>
+      restoreFilterState(savedState, {
+        columnFilters: defaultColumnFilters,
+        activePreset: defaultActivePreset,
+      }),
+    // Mount-only, matching savedState: later default changes must not stomp
+    // filters the user has since edited.
+    []
+  );
+
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(
+    restoredFilters.columnFilters
+  );
+  const [activePreset, setActivePreset] = useState<string>(restoredFilters.activePreset);
+
+  const [globalFilter, setGlobalFilter] = useState<string>(
+    savedState?.globalFilter ?? ""
   );
 
   const [viewMode, setViewMode] = useState<string>(() => {
@@ -150,9 +197,23 @@ export function useColumnState(options: UseColumnStateOptions = {}): UseColumnSt
       columnVisibility,
       columnOrder,
       viewMode,
+      columnFilters,
+      globalFilter,
+      activePreset,
       expandedByProject: expandedByProject.current,
     });
-  }, [savedState, sorting, columnVisibility, columnOrder, viewMode, expanded, projectKey]);
+  }, [
+    savedState,
+    sorting,
+    columnVisibility,
+    columnOrder,
+    viewMode,
+    columnFilters,
+    globalFilter,
+    activePreset,
+    expanded,
+    projectKey,
+  ]);
 
   const resetVisibility = () => {
     setColumnVisibility(defaultVisibility);
@@ -169,6 +230,12 @@ export function useColumnState(options: UseColumnStateOptions = {}): UseColumnSt
     setViewMode,
     expanded,
     setExpanded,
+    columnFilters,
+    setColumnFilters,
+    globalFilter,
+    setGlobalFilter,
+    activePreset,
+    setActivePreset,
     resetVisibility,
   };
 }
