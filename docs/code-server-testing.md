@@ -53,7 +53,7 @@ feature is broken" when it is really the fixture that is missing.
 ### Generated fixture (preferred)
 
 ```bash
-.agent/skills/vscode-server/scripts/make-test-fixture.sh [--server] [target-dir]
+.claude/skills/vscode-server/scripts/make-test-fixture.sh [--server] [target-dir]
 # default target: tmp/bd-test-fixture
 # prints FIXTURE_DIR:<path>, FIXTURE_MODE:<embedded|server>, FIXTURE_BEADS:<count>
 ```
@@ -78,8 +78,8 @@ diverged before (#79, F2/F4 of the bd 1.1.2 audit), so a release check needs
 both:
 
 ```bash
-.agent/skills/vscode-server/scripts/make-test-fixture.sh tmp/bd-release-fixture
-.agent/skills/vscode-server/scripts/make-test-fixture.sh --server tmp/bd-release-fixture-server
+.claude/skills/vscode-server/scripts/make-test-fixture.sh tmp/bd-release-fixture
+.claude/skills/vscode-server/scripts/make-test-fixture.sh --server tmp/bd-release-fixture-server
 ```
 
 Stop a server fixture with `bd dolt stop` from its directory when done; re-running
@@ -113,7 +113,7 @@ Against both fixtures, checking Dashboard, Issues and Details:
 ### Demo fixture (screenshots)
 
 ```bash
-.agent/skills/vscode-server/scripts/make-demo-fixture.sh [--server] [target-dir]
+.claude/skills/vscode-server/scripts/make-demo-fixture.sh [--server] [target-dir]
 # default target: tmp/bd-demo-fixture
 ```
 
