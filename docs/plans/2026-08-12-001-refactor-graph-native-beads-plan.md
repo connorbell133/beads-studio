@@ -1003,7 +1003,8 @@ notice, find locates a bead by id, and hover isolates its chains without a re-la
 - `src/webview/views/IssuesView.tsx` — view-mode toggle and expand column
 - `src/webview/hooks/useColumnState.ts` — persist the mode
 
-**Approach:** Build on the existing TanStack proposal in `sandbox/tree-view-design-proposal.md` —
+**Approach:** Build on the existing TanStack proposal, since removed with `sandbox/` and readable
+via `git show 9790748:sandbox/tree-view-design-proposal.md` —
 `getSubRows()` plus `getExpandedRowModel()`, list/tree toggle in the toolbar — with the tree shape
 now coming from the graph rather than from per-bead `dependsOn` hydration. `bd list` emits both a
 `parent` scalar and the `parent-child` edge, verified against bd 1.2.1; prefer the scalar and fall
@@ -1234,7 +1235,8 @@ level where this one keeps bead-level resolution.
 **In this repo:**
 - `docs/reference/beads-dependency-model.md` — the four edge types, direction semantics, and the
   rule that only `blocks` affects `bd ready`.
-- `sandbox/tree-view-design-proposal.md` — the TanStack tree approach U10 builds on.
+- `git show 9790748:sandbox/tree-view-design-proposal.md` — the TanStack tree approach U10 builds
+  on (file removed with `sandbox/`; content preserved in git history).
 - `src/backend/BeadsDoltBackend.ts:122` — the 15-column list with no dependency join.
 - `src/providers/DashboardViewProvider.ts:87` — `readyCount: byStatus.open`.
 - `src/backend/types.ts:323` — `normalizeBead`, exported and never called.

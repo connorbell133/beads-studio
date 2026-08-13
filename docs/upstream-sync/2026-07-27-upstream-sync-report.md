@@ -4,8 +4,9 @@
 **Upstream:** [steveyegge/beads](https://github.com/steveyegge/beads) @ v1.1.2 (2026-07-26)
 **Previous sync point:** v0.40.0
 
-Full audit with reproduction steps and verification output:
-[`sandbox/bd-1.1.2-compat.md`](../../sandbox/bd-1.1.2-compat.md).
+Full audit with reproduction steps and verification output was kept in
+`sandbox/bd-1.1.2-compat.md`, removed along with the rest of `sandbox/`; read it from git
+history with `git show 9790748:sandbox/bd-1.1.2-compat.md`.
 
 ## v1.1.0 → v1.1.2 in isolation: no impact
 
