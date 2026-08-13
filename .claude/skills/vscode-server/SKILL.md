@@ -59,7 +59,7 @@ A real database may lack the states under test, or be mid schema-migration and
 refuse writes, which looks like a broken feature.
 
 ```bash
-.agent/skills/vscode-server/scripts/make-test-fixture.sh   # -> /tmp/bd-test-fixture
+.claude/skills/vscode-server/scripts/make-test-fixture.sh   # -> /tmp/bd-test-fixture
 ```
 
 Open with `?folder=<FIXTURE_DIR>`. Embedded Dolt (CLI backend) by default;
