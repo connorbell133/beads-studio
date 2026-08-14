@@ -2,7 +2,7 @@
   "name": "beads-studio",
   "displayName": "Beads Studio",
   "description": "Dashboard, kanban board, and dependency graph for the Beads (bd) issue tracker",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "connorbell133",
   "license": "Apache-2.0",
   "icon": "resources/icon.png",

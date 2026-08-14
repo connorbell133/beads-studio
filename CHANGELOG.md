@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-14
+
 ### Added
 
 - Dependency graph refreshes itself every 5 seconds while its tab is visible, and carries a Refresh button for reading it again now (vsbeads-1ea)
