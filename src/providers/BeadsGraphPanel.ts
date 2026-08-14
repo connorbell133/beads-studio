@@ -11,9 +11,18 @@ import { BeadsProjectManager } from "../backend/BeadsProjectManager";
 import { Logger } from "../utils/logger";
 import { BeadsPanelHost, LoadReason } from "./BeadsPanelHost";
 
+/**
+ * The graph is usually open beside a terminal running `bd`, and nothing else
+ * tells it that a dependency was added or a bead closed - the CLI backend has no
+ * change token to watch. Five seconds is short enough that the picture tracks
+ * the work, long enough that it costs one read per tab per five seconds.
+ */
+const GRAPH_POLL_INTERVAL_MS = 5000;
+
 export class BeadsGraphPanel extends BeadsPanelHost {
   protected readonly viewType = "beadsGraph";
   protected readonly title = "Beads Graph";
+  protected readonly pollIntervalMs = GRAPH_POLL_INTERVAL_MS;
 
   private focusBeadId: string | null = null;
   private loadSequence = 0;

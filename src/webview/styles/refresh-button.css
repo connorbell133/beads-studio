@@ -1,0 +1,49 @@
+/* RefreshButton - shared "read it again" control.
+ *
+ * Shaped like the graph's toolbar buttons rather than like a primary action:
+ * refreshing is a cheap, repeatable move, not the thing the page is for. */
+
+.refresh-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex: 0 0 auto;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--border-radius);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.refresh-button:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.refresh-button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+/* The spin is the whole feedback: a poll-backed surface often refreshes to an
+   identical picture, and without motion the click would look like nothing
+   happened. Reduced-motion themes flatten it globally in styles.css. */
+.refresh-button.spinning .icon-wrapper {
+  animation: refresh-button-spin 0.8s linear infinite;
+}
+
+.refresh-button .icon-wrapper {
+  display: inline-flex;
+}
+
+@keyframes refresh-button-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

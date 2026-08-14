@@ -22,7 +22,16 @@ export abstract class BeadsPanelHost extends BeadsWebviewHost {
   /** Tab title. */
   protected abstract readonly title: string;
 
+  /**
+   * How often, in ms, to re-read while this panel is on screen. `0` disables it,
+   * which is the default: only surfaces that show work changing outside the
+   * editor - `bd` in a terminal, an agent closing beads - earn the extra reads.
+   */
+  protected readonly pollIntervalMs: number = 0;
+
   private panel?: vscode.WebviewPanel;
+  private pollTimer?: ReturnType<typeof setInterval>;
+  private pollInFlight = false;
 
   protected get webview(): vscode.Webview | undefined {
     return this.panel?.webview;
@@ -67,6 +76,11 @@ export abstract class BeadsPanelHost extends BeadsWebviewHost {
     this.panel.onDidChangeViewState(() => {
       if (this.panel?.visible) {
         this.loadData("background");
+        this.startPolling();
+      } else {
+        // A tab in the background is a tab nobody is reading. Stop paying for
+        // it; becoming visible again loads once and resumes the timer.
+        this.stopPolling();
       }
     });
 
@@ -74,7 +88,10 @@ export abstract class BeadsPanelHost extends BeadsWebviewHost {
     // posting into a disposed one.
     this.panel.onDidDispose(() => {
       this.panel = undefined;
+      this.stopPolling();
     });
+
+    this.startPolling();
   }
 
   public isOpen(): boolean {
@@ -82,8 +99,49 @@ export abstract class BeadsPanelHost extends BeadsWebviewHost {
   }
 
   public dispose(): void {
+    this.stopPolling();
     this.panel?.dispose();
     this.panel = undefined;
+  }
+
+  /**
+   * Keeps the panel current while it is on screen.
+   *
+   * The poll reads as "background", so it never raises the loading state: the
+   * picture the user is reading is replaced only once the new one has arrived,
+   * and a poll that returns an unchanged graph is invisible.
+   */
+  private startPolling(): void {
+    if (this.pollTimer || this.pollIntervalMs <= 0 || !this.panel?.visible) {
+      return;
+    }
+    this.pollTimer = setInterval(() => {
+      void this.poll();
+    }, this.pollIntervalMs);
+  }
+
+  private stopPolling(): void {
+    if (!this.pollTimer) return;
+    clearInterval(this.pollTimer);
+    this.pollTimer = undefined;
+  }
+
+  private async poll(): Promise<void> {
+    // A read slower than the interval must not stack reads on top of each
+    // other; skip the tick instead and let the one in flight finish.
+    if (this.pollInFlight || !this.panel?.visible) {
+      return;
+    }
+    this.pollInFlight = true;
+    try {
+      await this.loadData("background");
+    } catch (error) {
+      // loadData owns its own error surface; a poll must never bubble into an
+      // unhandled rejection in the timer.
+      this.log.debug(`Poll failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.pollInFlight = false;
+    }
   }
 
   /** Refresh entry points, mirroring the sidebar providers. */

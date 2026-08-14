@@ -243,6 +243,7 @@ export function App(): React.ReactElement {
               vscode.postMessage({ type: "openBeadDetails", beadId })
             }
             onRetry={() => vscode.postMessage({ type: "refresh" })}
+            onRefresh={() => vscode.postMessage({ type: "refresh" })}
           />
         );
 
