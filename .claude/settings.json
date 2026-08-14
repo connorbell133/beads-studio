@@ -9,5 +9,8 @@
     ],
     "ask": [],
     "deny": []
+  },
+  "worktree": {
+    "bgIsolation": "none"
   }
 }
