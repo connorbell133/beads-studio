@@ -122,6 +122,8 @@ export interface FakeWebviewPanel {
   onDidDispose: (handler: () => void) => { dispose: () => void };
   onDidChangeViewState: (handler: () => void) => { dispose: () => void };
   fireDispose: () => void;
+  /** Moves the tab to or from the foreground, as the real host would. */
+  setVisible: (visible: boolean) => void;
 }
 
 export const createdPanels: FakeWebviewPanel[] = [];
@@ -133,6 +135,7 @@ export const window = {
   setStatusBarMessage: () => undefined,
   createWebviewPanel: (viewType: string, title: string): FakeWebviewPanel => {
     const disposeHandlers: Array<() => void> = [];
+    const viewStateHandlers: Array<() => void> = [];
     const panel: FakeWebviewPanel = {
       viewType,
       title,
@@ -164,12 +167,20 @@ export const window = {
         disposeHandlers.push(handler);
         return { dispose: () => undefined };
       },
-      onDidChangeViewState: () => ({ dispose: () => undefined }),
+      onDidChangeViewState: (handler: () => void) => {
+        viewStateHandlers.push(handler);
+        return { dispose: () => undefined };
+      },
       fireDispose: () => {
         if (panel.disposed) return;
         panel.disposed = true;
         panel.visible = false;
         for (const handler of disposeHandlers) handler();
+      },
+      setVisible: (visible: boolean) => {
+        if (panel.visible === visible) return;
+        panel.visible = visible;
+        for (const handler of viewStateHandlers) handler();
       },
     };
     createdPanels.push(panel);

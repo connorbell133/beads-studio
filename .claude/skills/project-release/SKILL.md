@@ -1,5 +1,6 @@
 ---
-description: Prepare and tag a new release
+name: project-release
+description: Prepare and tag a new release of the Beads Studio extension — version bump, changelog rollover, git tag. Use for "cut a release", "tag v1.1.0", "ship a new version".
 argument-hint: [version]
 allowed-tools: Bash(git:*), Bash(jq:*), Read, Edit, AskUserQuestion
 model: sonnet

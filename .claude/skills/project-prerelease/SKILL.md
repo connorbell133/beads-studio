@@ -1,5 +1,6 @@
 ---
-description: Audit changelog and draft entries for upcoming release
+name: project-prerelease
+description: Audit CHANGELOG.md for notable changes missing since the last release and draft the entries. Use before cutting a release, or for "what's missing from the changelog", "audit the changelog".
 allowed-tools: Bash(git:*), Bash(jq:*), Read, Edit, Grep, AskUserQuestion, mcp__plugin_beads_beads__list, mcp__plugin_beads_beads__show
 model: haiku
 ---

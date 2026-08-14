@@ -1,3 +1,12 @@
+/* Title and refresh share a row: the control that re-reads the graph belongs
+ * beside the thing it re-reads, and the subtitle keeps the full measure. */
+.graph-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
 /* The adjacency layer's disclosure.
  *
  * Open by default on graphs small enough to read whole, collapsed above that so

@@ -20,6 +20,11 @@ import { ErrorMessage } from "../common/ErrorMessage";
 import { useRovingFocus } from "../hooks/useRovingFocus";
 import { GraphCanvas } from "./GraphCanvas";
 import { LeverageBadge } from "../common/LeverageBadge";
+import { RefreshButton } from "../common/RefreshButton";
+
+/** Mirrors BeadsGraphPanel's poll, so the hint cannot claim a cadence the panel does not keep. */
+const POLL_SECONDS = 5;
+const REFRESH_TITLE = `Read the graph again now (it also refreshes every ${POLL_SECONDS} seconds while this tab is open)`;
 
 interface GraphViewProps {
   beads: Bead[];
@@ -31,6 +36,8 @@ interface GraphViewProps {
   focusFindToken?: number;
   onSelectBead: (beadId: string) => void;
   onRetry: () => void;
+  /** Re-reads the graph now, ahead of the panel's own poll. */
+  onRefresh: () => void;
 }
 
 export function GraphView({
@@ -42,6 +49,7 @@ export function GraphView({
   focusFindToken,
   onSelectBead,
   onRetry,
+  onRefresh,
 }: GraphViewProps): React.ReactElement {
   const byId = useMemo(() => new Map(beads.map((b) => [b.id, b])), [beads]);
 
@@ -88,6 +96,15 @@ export function GraphView({
           Create one with <code>bd create</code>, then link it with{" "}
           <code>bd dep add</code>.
         </p>
+        {/* The empty state is exactly where a stale read is most likely - a
+            bead was just created in a terminal - so the refresh stays reachable
+            here rather than only once there is a graph to head. */}
+        <RefreshButton
+          onRefresh={onRefresh}
+          busy={loading}
+          label="Refresh"
+          title={REFRESH_TITLE}
+        />
       </div>
     );
   }
@@ -95,7 +112,15 @@ export function GraphView({
   return (
     <div className="graph-view">
       <header className="graph-header">
-        <h1 className="graph-title">Dependency graph</h1>
+        <div className="graph-header-row">
+          <h1 className="graph-title">Dependency graph</h1>
+          <RefreshButton
+            onRefresh={onRefresh}
+            busy={loading}
+            label="Refresh"
+            title={REFRESH_TITLE}
+          />
+        </div>
         <p className="graph-subtitle">
           Which work is waiting on which: an arrow points from a bead that blocks to the bead it
           holds up. Beads with no open blockers are marked ready.
