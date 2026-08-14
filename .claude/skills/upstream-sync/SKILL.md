@@ -1,3 +1,8 @@
+---
+name: upstream-sync
+description: Check the upstream gastownhall/beads repo for daemon API, bead type, and CLI changes that affect this extension, and write a dated sync report under docs/upstream-sync/. Use for "check upstream", "sync with beads", "did bd change".
+---
+
 # Upstream Beads Sync Check
 
 Check the upstream beads repo for changes that affect vscode-beads.
