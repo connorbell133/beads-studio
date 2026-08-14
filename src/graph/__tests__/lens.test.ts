@@ -12,6 +12,8 @@ import {
   GRAPH_LENSES,
   LensBead,
   listEpics,
+  visibleEpics,
+  hiddenEpicCount,
 } from "../lens";
 import type { BeadsGraphModel, GraphInputEdge, GraphInputNode } from "../types";
 
@@ -514,15 +516,17 @@ describe("listEpics", () => {
     ]);
 
     expect(listEpics(model, beads)).toEqual([
-      { id: "e1", label: "Bead e1", total: 3, closed: 1 },
-      { id: "s1", label: "Bead s1", total: 1, closed: 1 },
+      { id: "e1", label: "Bead e1", total: 3, closed: 1, complete: false },
+      { id: "s1", label: "Bead s1", total: 1, closed: 1, complete: true },
     ]);
   });
 
   it("offers an empty epic - it is still a place work will go", () => {
     const { model, beads } = build([raw("e1", { issue_type: "epic" }), raw("loose")]);
 
-    expect(listEpics(model, beads)).toEqual([{ id: "e1", label: "Bead e1", total: 0, closed: 0 }]);
+    expect(listEpics(model, beads)).toEqual([
+      { id: "e1", label: "Bead e1", total: 0, closed: 0, complete: false },
+    ]);
   });
 
   it("never offers a coordination bead as an epic", () => {
@@ -538,5 +542,186 @@ describe("listEpics", () => {
     const { model, beads } = build([raw("a"), raw("b")]);
 
     expect(listEpics(model, beads)).toEqual([]);
+  });
+});
+
+describe("satisfied dependencies", () => {
+  /** An epic with two members, where the first blocks the second. */
+  const epicWith = (firstStatus: string) =>
+    build(
+      [
+        raw("e1", { issue_type: "epic" }),
+        raw("t1", { parent: "e1", status: firstStatus }),
+        raw("t2", { parent: "e1" }),
+      ],
+      [blocks("t2", "t1")]
+    );
+
+  it("keeps the edge and marks it satisfied once the blocker closes", () => {
+    const { model, beads } = epicWith("closed");
+    const result = applyLens(model, beads, { lens: "epic", epicId: "e1" });
+
+    const edge = result.edges.find((e) => e.blocker === "t1" && e.blocked === "t2");
+    expect(edge).toBeDefined();
+    expect(edge?.kind).toBe("blocks");
+    expect(edge?.satisfied).toBe(true);
+  });
+
+  it("leaves the picture identical apart from the satisfied flag", () => {
+    // The requirement the whole change exists for: closing a member must not
+    // move anything.
+    const before = epicWith("open");
+    const after = epicWith("closed");
+    const lensOpts = { lens: "epic" as const, epicId: "e1" };
+
+    const a = applyLens(before.model, before.beads, lensOpts);
+    const b = applyLens(after.model, after.beads, lensOpts);
+
+    expect(b.nodes.map((n) => n.id)).toEqual(a.nodes.map((n) => n.id));
+    expect(b.nodes.map((n) => n.layoutRank)).toEqual(a.nodes.map((n) => n.layoutRank));
+    expect(pairs(b)).toEqual(pairs(a));
+  });
+
+  it("does not leave the dependent looking blocked", () => {
+    const { model, beads } = epicWith("closed");
+    const result = applyLens(model, beads, { lens: "epic", epicId: "e1" });
+
+    expect(result.nodes.find((n) => n.id === "t2")?.blocked).toBe(false);
+    expect(result.nodes.find((n) => n.id === "t2")?.ready).toBe(true);
+  });
+
+  it("marks a live blocker unsatisfied", () => {
+    const { model, beads } = epicWith("open");
+    const result = applyLens(model, beads, { lens: "epic", epicId: "e1" });
+
+    expect(result.edges.find((e) => e.blocker === "t1")?.satisfied).toBe(false);
+  });
+
+  it("keeps a coordination bead in the picture after its edge is satisfied", () => {
+    const { model, beads } = build(
+      [raw("gate", { issue_type: "gate", status: "closed" }), raw("t1")],
+      [blocks("t1", "gate")]
+    );
+    const result = applyLens(model, beads, { lens: "full" });
+
+    expect(ids(result)).toEqual(["gate", "t1"]);
+    expect(result.nodes.find((n) => n.id === "gate")?.coordination).toBe(true);
+    expect(result.edges.find((e) => e.blocker === "gate")?.satisfied).toBe(true);
+  });
+
+  it("never marks a containment tether satisfied", () => {
+    const { model, beads } = build([
+      raw("e1", { issue_type: "epic", status: "closed" }),
+      raw("t1", { parent: "e1", status: "closed" }),
+    ]);
+    const result = applyLens(model, beads, { lens: "full" });
+
+    const tether = result.edges.find((e) => e.kind === "contains");
+    expect(tether).toBeDefined();
+    expect(tether?.satisfied).toBe(false);
+  });
+
+  it("reaches through a satisfied edge on blast-radius", () => {
+    const { model, beads } = build(
+      [raw("a"), raw("b", { status: "closed" }), raw("c")],
+      [blocks("b", "a"), blocks("c", "b")]
+    );
+    const result = applyLens(model, beads, { lens: "blast-radius", focusId: "a" });
+
+    expect(ids(result)).toEqual(["a", "b", "c"]);
+    expect(result.nodes.find((n) => n.id === "c")?.distance).toBe(2);
+  });
+
+  it("stays deterministic across two applications", () => {
+    const { model, beads } = epicWith("closed");
+    const opts = { lens: "epic" as const, epicId: "e1" };
+
+    const first = applyLens(model, beads, opts);
+    const second = applyLens(model, beads, opts);
+
+    expect(second.nodes.map((n) => n.id)).toEqual(first.nodes.map((n) => n.id));
+    expect(second.edges).toEqual(first.edges);
+  });
+});
+
+describe("epic completion", () => {
+  const epicOf = (memberStatuses: string[]) =>
+    build([
+      raw("e1", { issue_type: "epic" }),
+      ...memberStatuses.map((status, i) => raw(`t${i}`, { parent: "e1", status })),
+    ]);
+
+  it("marks an epic complete once every member has closed", () => {
+    const { model, beads } = epicOf(["closed", "closed", "closed"]);
+
+    expect(listEpics(model, beads)[0]).toMatchObject({ id: "e1", closed: 3, total: 3, complete: true });
+  });
+
+  it("leaves an epic incomplete while any member is open", () => {
+    const { model, beads } = epicOf(["closed", "closed", "open"]);
+
+    expect(listEpics(model, beads)[0].complete).toBe(false);
+  });
+
+  it("never calls a memberless epic complete", () => {
+    // 0 of 0 is not an achievement, and hiding it would make it unreachable.
+    const { model, beads } = build([raw("e1", { issue_type: "epic", status: "closed" })]);
+
+    expect(listEpics(model, beads)[0]).toMatchObject({ total: 0, complete: false });
+  });
+
+  it("reads membership, not the epic's own status", () => {
+    const { model, beads } = build([
+      raw("e1", { issue_type: "epic", status: "closed" }),
+      raw("t0", { parent: "e1" }),
+    ]);
+
+    expect(listEpics(model, beads)[0].complete).toBe(false);
+  });
+});
+
+describe("visibleEpics", () => {
+  const epic = (id: string, complete: boolean) => ({
+    id,
+    label: id,
+    total: 1,
+    closed: complete ? 1 : 0,
+    complete,
+  });
+  const all = [epic("live1", false), epic("done1", true), epic("live2", false), epic("done2", true)];
+
+  it("hides finished epics by default", () => {
+    expect(visibleEpics(all, false, null).map((e) => e.id)).toEqual(["live1", "live2"]);
+  });
+
+  it("lists everything when asked, in the original order", () => {
+    expect(visibleEpics(all, true, null).map((e) => e.id)).toEqual([
+      "live1",
+      "done1",
+      "live2",
+      "done2",
+    ]);
+  });
+
+  it("keeps the anchored epic listed after it completes", () => {
+    // Otherwise the picker drops the epic you are watching at the moment its
+    // last bead closes, and the lens falls through to an unrelated one.
+    expect(visibleEpics(all, false, "done1").map((e) => e.id)).toEqual([
+      "live1",
+      "done1",
+      "live2",
+    ]);
+  });
+
+  it("keeps the anchor even when it is the only epic left", () => {
+    const finished = [epic("done1", true), epic("done2", true)];
+
+    expect(visibleEpics(finished, false, "done2").map((e) => e.id)).toEqual(["done2"]);
+  });
+
+  it("counts what the default filter holds back", () => {
+    expect(hiddenEpicCount(all, null)).toBe(2);
+    expect(hiddenEpicCount(all, "done1")).toBe(1);
+    expect(hiddenEpicCount([epic("live1", false)], null)).toBe(0);
   });
 });

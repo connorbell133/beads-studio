@@ -19,6 +19,7 @@ import { Loading } from "../common/Loading";
 import { ErrorMessage } from "../common/ErrorMessage";
 import { useRovingFocus } from "../hooks/useRovingFocus";
 import { GraphCanvas } from "./GraphCanvas";
+import { countBlockingLinks } from "../../graph/summary";
 import { LeverageBadge } from "../common/LeverageBadge";
 import { RefreshButton } from "../common/RefreshButton";
 
@@ -67,8 +68,11 @@ export function GraphView({
       );
   }, [graph, byId]);
 
-  const edgeCount = useMemo(
-    () => (graph ? Object.values(graph.nodes).reduce((n, x) => n + x.blockedBy.length, 0) : 0),
+  // Counted the way the canvas draws them, so the header cannot claim three
+  // links over a picture showing nine. `live` is what is still in the way;
+  // `satisfied` is what has been met and is drawn recessed.
+  const links = useMemo(
+    () => (graph ? countBlockingLinks(graph) : { live: 0, satisfied: 0 }),
     [graph]
   );
 
@@ -126,7 +130,8 @@ export function GraphView({
           holds up. Beads with no open blockers are marked ready.
         </p>
         <p className="graph-summary">
-          {ordered.length} beads, {edgeCount} blocking {edgeCount === 1 ? "link" : "links"}
+          {ordered.length} beads, {links.live} blocking {links.live === 1 ? "link" : "links"}
+          {links.satisfied > 0 && ` · ${links.satisfied} met`}
           {graph.hasCycle && (
             <>
               {" · "}

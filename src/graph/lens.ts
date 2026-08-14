@@ -24,8 +24,12 @@
  *   and drawing containment alongside blockage is what makes a dependency graph
  *   unreadable. Hierarchy is the epic lens's membership, never an arrow.
  *
- *   Edges come from `blockedBy`, which the derivation already narrowed to open
- *   blockers. A closed blocker is not in the way, so it is not a line.
+ *   Edges come from `dependsOn` - every recorded blocking edge, whether or not
+ *   the blocker has closed. A met dependency is drawn recessed (`satisfied`)
+ *   rather than dropped, and layout is derived from the same complete set, so
+ *   an epic keeps its shape as its members close instead of re-flowing on
+ *   every read. What is still in the way is a per-node fact (`blocked`, from
+ *   the model's open-blocker view), not the presence or absence of a line.
  *
  *   Coordination beads (gate, agent, role, message) are filtered out along with
  *   their edges, matching every other surface. They gate readiness in the
@@ -89,6 +93,12 @@ export interface LensNode {
   leverage: number;
   rank: number;
   /**
+   * Depth over every recorded blocker, closed or not. Node order is fixed by
+   * this rather than by `rank` so the picture does not re-sort - and dagre does
+   * not re-lay-out - each time a bead closes.
+   */
+  layoutRank: number;
+  /**
    * A coordination bead - a gate, agent, role or message - drawn only because
    * it blocks visible work. These are not work, so they read muted, but
    * omitting them left a hole in the chain exactly where the ready lane names
@@ -121,6 +131,16 @@ export interface LensEdge {
    * own members would be worse than not drawing the link at all.
    */
   kind: "blocks" | "contains";
+  /**
+   * The blocker has closed, so this dependency is met.
+   *
+   * Drawn recessed rather than deleted. Deleting it was the old behaviour and
+   * it cost more than the ink it saved: the arrow disappeared mid-epic, and
+   * because layout was derived from the same filtered edge set, every
+   * downstream bead moved with it. Always false on `contains`, which describes
+   * membership and has nothing to satisfy.
+   */
+  satisfied: boolean;
 }
 
 export interface LensResult {
@@ -166,6 +186,15 @@ export interface EpicOption {
   total: number;
   /** Closed descendants. */
   closed: number;
+  /**
+   * Every member has closed, so there is nothing left to open this epic up for.
+   *
+   * Membership decides this, not the epic's own status: a container's status
+   * says nothing about its contents, and bd does not close an epic when its
+   * last child lands. An epic with no members is never complete - 0 of 0 is not
+   * an achievement, and hiding it would make it unreachable.
+   */
+  complete: boolean;
 }
 
 /**
@@ -190,13 +219,40 @@ export function listEpics(model: BeadsGraphModel, beads: LensBead[]): EpicOption
     .map((id) => {
       const bead = context.beads.get(id) as LensBead;
       const members = descendantsOf(model, context, id);
+      const closed = members.filter(
+        (member) => context.beads.get(member)?.status === "closed"
+      ).length;
       return {
         id,
         label: bead.title && bead.title.length > 0 ? bead.title : id,
         total: members.length,
-        closed: members.filter((member) => context.beads.get(member)?.status === "closed").length,
+        closed,
+        complete: members.length > 0 && closed === members.length,
       };
     });
+}
+
+/**
+ * The epics the picker offers, given the toggle and what the lens is anchored on.
+ *
+ * Finished epics are hidden by default - a project accumulates them forever and
+ * they are never the thing being worked on. The anchor is re-admitted
+ * unconditionally, because the alternative is that the epic you are watching
+ * drops out of the list at the moment its last bead closes, and the lens falls
+ * through to some unrelated epic exactly when you wanted to see the finish.
+ */
+export function visibleEpics(
+  epics: EpicOption[],
+  showCompleted: boolean,
+  anchorId: string | null
+): EpicOption[] {
+  if (showCompleted) return epics;
+  return epics.filter((epic) => !epic.complete || epic.id === anchorId);
+}
+
+/** How many epics the default filter is holding back. */
+export function hiddenEpicCount(epics: EpicOption[], anchorId: string | null): number {
+  return epics.length - visibleEpics(epics, false, anchorId).length;
 }
 
 /**
@@ -222,9 +278,15 @@ interface Context {
   beads: Map<string, LensBead>;
   /** Visible ids in model order. */
   ids: string[];
-  /** blocker -> blocked, between visible beads only. */
+  /**
+   * blocker -> blocked, between visible beads only.
+   *
+   * Built from every recorded blocking edge, not just the open ones. A lens
+   * describes what the graph *is*; whether a given dependency has been met is
+   * carried per-edge by `satisfied` and per-node by `blocked`.
+   */
   blocks: Map<string, string[]>;
-  /** blocked -> blocker, between visible beads only. */
+  /** blocked -> blocker, between visible beads only. Structural, as above. */
   blockedBy: Map<string, string[]>;
   /** Ids admitted only because they gate visible work. Drawn muted. */
   coordination: Set<string>;
@@ -278,7 +340,7 @@ function buildContext(
   // real node keeps them consistent without inventing an edge bd never
   // recorded, which is what bridging across it would have done.
   for (const id of [...ids]) {
-    for (const blocker of model.nodes[id].blockedBy) {
+    for (const blocker of model.nodes[id].dependsOn) {
       if (visible.has(blocker)) continue;
       const bead = byId.get(blocker);
       if (!bead || !hidden.has(bead.type ?? "")) continue;
@@ -291,7 +353,7 @@ function buildContext(
   const blocks = new Map<string, string[]>(ids.map((id) => [id, []]));
   const blockedBy = new Map<string, string[]>(ids.map((id) => [id, []]));
   for (const id of ids) {
-    for (const blocker of model.nodes[id].blockedBy) {
+    for (const blocker of model.nodes[id].dependsOn) {
       if (!visible.has(blocker)) continue;
       blocks.get(blocker)?.push(id);
       blockedBy.get(id)?.push(blocker);
@@ -422,6 +484,7 @@ function finish(
       leverage: derived.leverage,
       coordination: context.coordination.has(id),
       rank: derived.rank,
+      layoutRank: derived.layoutRank,
     };
 
     if (radius) node.distance = radius.distance.get(id);
@@ -439,7 +502,12 @@ function finish(
       const key = `${blocker}${EDGE_KEY_SEP}${blocked}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      edges.push({ blocker, blocked, kind: "blocks" });
+      edges.push({
+        blocker,
+        blocked,
+        kind: "blocks",
+        satisfied: context.beads.get(blocker)?.status === "closed",
+      });
     }
   }
   edges.sort((a, b) => byId(a.blocker, b.blocker) || byId(a.blocked, b.blocked));
@@ -454,8 +522,8 @@ function finish(
       if (!parent || !shown.has(parent) || !shown.has(id)) continue;
       edges.push(
         lens === "epic"
-          ? { blocker: id, blocked: parent, kind: "contains" }
-          : { blocker: parent, blocked: id, kind: "contains" }
+          ? { blocker: id, blocked: parent, kind: "contains", satisfied: false }
+          : { blocker: parent, blocked: id, kind: "contains", satisfied: false }
       );
     }
     edges.sort(
@@ -466,7 +534,10 @@ function finish(
     );
   }
 
-  nodes.sort((a, b) => a.rank - b.rank || byId(a.id, b.id));
+  // layoutRank, not rank: dagre's output depends on insertion order, so
+  // ordering by a depth that shrinks as work closes would move the whole
+  // picture between two renders of a graph nobody restructured.
+  nodes.sort((a, b) => a.layoutRank - b.layoutRank || byId(a.id, b.id));
 
   const result: LensResult = {
     lens,

@@ -51,14 +51,26 @@ export type GraphicToken = keyof typeof GRAPHIC_TOKENS;
  * bd's built-in statuses plus whatever a project defines through
  * `bd config set status.custom`, which is why the lookup is open-ended and
  * falls back rather than throwing.
+ *
+ * `closed` wears the accent - the same hue as an epic, its type glyph, and the
+ * goal card a subtree converges on. Finished work reads as having arrived
+ * somewhere rather than as having been greyed out, and on the graph an epic and
+ * its completed members share one colour family. That leaves `muted` meaning
+ * only "parked".
+ *
+ * `pinned` moved to warning to free the accent. Nothing else claimed warning,
+ * and "flagged for attention" is close enough to what pinning means. Six usable
+ * hues cannot separate seven statuses - `in_progress` and `hooked` already
+ * share info - which is workable only because the label, not the dot, is what
+ * states the status.
  */
 const STATUS_HUE: Record<string, GraphicToken> = {
   open: "success",
   in_progress: "info",
   blocked: "danger",
   deferred: "muted",
-  closed: "muted",
-  pinned: "accent",
+  closed: "accent",
+  pinned: "warning",
   hooked: "info",
 };
 

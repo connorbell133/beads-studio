@@ -1,5 +1,5 @@
 import { deriveGraph } from "../BeadsGraph";
-import { deriveSummary } from "../summary";
+import { countBlockingLinks, deriveSummary } from "../summary";
 import type { GraphInputNode } from "../types";
 
 const node = (id: string, over: Partial<GraphInputNode> = {}): GraphInputNode => ({
@@ -88,5 +88,44 @@ describe("deriveSummary", () => {
     expect(summary.byPriority[0]).toBe(1);
     expect(summary.byPriority[2]).toBe(1);
     expect(summary.total).toBe(3);
+  });
+});
+
+describe("countBlockingLinks", () => {
+  it("counts an open blocker as live", () => {
+    const g = deriveGraph([node("a"), node("b")], [blocks("b", "a")]);
+
+    expect(countBlockingLinks(g)).toEqual({ live: 1, satisfied: 0 });
+  });
+
+  it("counts a closed blocker as satisfied rather than dropping it", () => {
+    const g = deriveGraph([node("a", { status: "closed" }), node("b")], [blocks("b", "a")]);
+
+    expect(countBlockingLinks(g)).toEqual({ live: 0, satisfied: 1 });
+  });
+
+  it("keeps the total steady as work closes", () => {
+    // The header must not appear to lose links just because they were met.
+    const edges = [blocks("b", "a"), blocks("c", "b")];
+    const before = countBlockingLinks(deriveGraph([node("a"), node("b"), node("c")], edges));
+    const after = countBlockingLinks(
+      deriveGraph([node("a", { status: "closed" }), node("b"), node("c")], edges)
+    );
+
+    expect(before.live + before.satisfied).toBe(after.live + after.satisfied);
+    expect(after).toEqual({ live: 1, satisfied: 1 });
+  });
+
+  it("reports zero for a graph with no blocking edges", () => {
+    expect(countBlockingLinks(deriveGraph([node("a"), node("b")], []))).toEqual({
+      live: 0,
+      satisfied: 0,
+    });
+  });
+
+  it("counts a duplicated pair once", () => {
+    const g = deriveGraph([node("a"), node("b")], [blocks("b", "a"), blocks("b", "a")]);
+
+    expect(countBlockingLinks(g)).toEqual({ live: 1, satisfied: 0 });
   });
 });

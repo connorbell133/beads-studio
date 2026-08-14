@@ -73,6 +73,8 @@ import {
   LENS_LABELS,
   LensNode,
   listEpics,
+  visibleEpics,
+  hiddenEpicCount,
 } from "../../graph/lens";
 import {
   chainFilter,
@@ -83,6 +85,7 @@ import {
   TraverseDirection,
 } from "../../graph/find";
 import { resolveDensity } from "../../graph/density";
+import { edgeStyle } from "./edge-style";
 import {
   GraphLayoutEdgePath,
   GraphLayoutPosition,
@@ -200,6 +203,8 @@ export function GraphCanvas({
   const epics = useMemo(() => (graph ? listEpics(graph, beads) : []), [graph, beads]);
   /** The epic the user picked from the toolbar, kept only while it exists. */
   const [ownEpicId, setOwnEpicId] = useState<string | null>(null);
+  /** Finished epics are listed only on request; see `visibleEpics`. */
+  const [showCompleted, setShowCompleted] = useState(false);
   // The epic lens's anchor, derived rather than stored: the user's pick when
   // it still exists, else the epic the selection sits inside, else the first
   // epic. Deriving means a project switch or a deleted epic can never leave
@@ -214,8 +219,17 @@ export function GraphCanvas({
       seen.add(current);
       current = graph?.nodes[current]?.parent;
     }
-    return epics[0]?.id ?? null;
+    // Prefer an epic with work left: opening on a finished one shows a picture
+    // with nothing to do in it.
+    return (epics.find((epic) => !epic.complete) ?? epics[0])?.id ?? null;
   }, [ownEpicId, epics, selectedBeadId, graph]);
+
+  /** What the picker lists, and how many it is holding back. */
+  const shownEpics = useMemo(
+    () => visibleEpics(epics, showCompleted, epicId),
+    [epics, showCompleted, epicId]
+  );
+  const hiddenEpics = useMemo(() => hiddenEpicCount(epics, epicId), [epics, epicId]);
 
   // The requested lens is evaluated first so the density decision has a real
   // node count to judge. Only the lens that survives that decision is laid out,
@@ -638,9 +652,12 @@ export function GraphCanvas({
         lens={requestedLens}
         onLensChange={chooseLens}
         anchored={Boolean(anchor)}
-        epics={epics}
+        epics={shownEpics}
         epicId={epicId}
         onEpicChange={setOwnEpicId}
+        showCompleted={showCompleted}
+        onShowCompletedChange={setShowCompleted}
+        hiddenEpicCount={hiddenEpics}
         query={query}
         onQueryChange={setQuery}
         onQueryKeyDown={onFindKeyDown}
@@ -722,6 +739,23 @@ export function GraphCanvas({
             >
               <path d="M 0 0 L 8 4 L 0 8 z" fill={GRAPHIC_TOKENS.warning} />
             </marker>
+            {/* A head cannot inherit the path's opacity, so a met dependency
+                needs its own faded marker rather than reusing the live one. */}
+            <marker
+              id={`${markerId}-arrow-satisfied`}
+              viewBox="0 0 8 8"
+              refX="7"
+              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path
+                d="M 0 0 L 8 4 L 0 8 z"
+                fill={GRAPHIC_TOKENS.neutral}
+                fillOpacity={0.45}
+              />
+            </marker>
           </defs>
 
           <g className="graph-canvas-edges">
@@ -736,6 +770,12 @@ export function GraphCanvas({
               const offChain = Boolean(onChain && edge && !contains && !onChain(edge));
               const offMatch = find.active && !(matched.has(path.source) && matched.has(path.target));
               const dimmedEdge = offChain || offMatch;
+              const style = edgeStyle({
+                kind: edge?.kind,
+                satisfied: edge?.satisfied,
+                cycle,
+                dimmed: dimmedEdge,
+              });
               // Named only on the epic lens, where the tethers are the point of
               // the picture. On the full lens the same words repeated across
               // every containment link would be wallpaper.
@@ -746,16 +786,14 @@ export function GraphCanvas({
               return (
                 <React.Fragment key={`${path.source}\t${path.target}`}>
                   <path
-                    className={`graph-canvas-edge${cycle ? " in-cycle" : ""}${
-                      contains ? " contains" : ""
-                    }${dimmedEdge ? " dimmed" : ""}`}
+                    className={style.className}
                     d={edgePath(path)}
                     fill="none"
-                    stroke={cycle ? GRAPHIC_TOKENS.warning : GRAPHIC_TOKENS.neutral}
-                    strokeWidth={contains ? 1 : 1.25}
-                    strokeDasharray={cycle ? "5 4" : contains ? "1 4" : undefined}
+                    stroke={style.stroke}
+                    strokeWidth={style.strokeWidth}
+                    strokeDasharray={style.strokeDasharray}
                     markerEnd={
-                      contains ? undefined : `url(#${markerId}-${cycle ? "arrow-cycle" : "arrow"})`
+                      style.marker ? `url(#${markerId}-${style.marker})` : undefined
                     }
                   />
                   {midpoint && (

@@ -486,3 +486,50 @@
   font-variant-numeric: tabular-nums;
   flex: none;
 }
+
+/* The "Show completed" row, separated from the epics it toggles so it does not
+   read as one of them. Justified to the start, against the epic rows'
+   space-between, because a checkbox belongs beside its label. */
+.graph-canvas-epic-toggle {
+  justify-content: flex-start !important;
+  gap: var(--spacing-sm) !important;
+  margin-top: var(--spacing-xs);
+  border-top: 1px solid var(--vscode-menu-separatorBackground, var(--vscode-widget-border));
+  padding-top: var(--spacing-sm);
+  color: var(--vscode-descriptionForeground);
+}
+
+.graph-canvas-epic-toggle[aria-pressed="true"] {
+  color: var(--vscode-foreground);
+}
+
+.graph-canvas-epic-toggle-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--vscode-checkbox-border, var(--vscode-widget-border));
+  border-radius: 2px;
+  background: var(--vscode-checkbox-background, transparent);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.graph-canvas-epic-toggle[aria-pressed="true"] .graph-canvas-epic-toggle-box {
+  background: var(--vscode-checkbox-selectBackground, var(--vscode-button-background));
+  border-color: var(--vscode-checkbox-selectBorder, var(--vscode-button-background));
+  color: var(--vscode-button-foreground);
+}
+
+/* A met dependency: still a real arrow, in the past tense. Recessed by opacity
+   rather than by a second hue, so it reads as the same relationship a live
+   blocker has and not as a third kind of link. */
+.graph-canvas-edge.satisfied {
+  opacity: 0.4;
+}
+
+.graph-canvas-edge.satisfied.dimmed {
+  opacity: 0.15;
+}
