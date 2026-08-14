@@ -63,3 +63,35 @@ export function deriveSummary(
     degraded: !model.complete,
   };
 }
+
+/** Blocking links, split by whether they are still in the way. */
+export interface BlockingLinkCounts {
+  /** The blocker is still open. */
+  live: number;
+  /** The blocker has closed, so the link is drawn but gates nothing. */
+  satisfied: number;
+}
+
+/**
+ * How many blocking links the graph holds, counted the way the canvas draws
+ * them.
+ *
+ * Separate from `blockedBy.length` summed across nodes, which is the live count
+ * alone. Once satisfied links became visible, that sum stopped matching the
+ * arrows on screen - the header claimed three links over a picture with nine.
+ * A pair recorded twice counts once, matching the lens's own de-duplication.
+ */
+export function countBlockingLinks(model: BeadsGraphModel): BlockingLinkCounts {
+  let live = 0;
+  let satisfied = 0;
+
+  for (const node of Object.values(model.nodes)) {
+    const open = new Set(node.blockedBy);
+    for (const blocker of new Set(node.dependsOn)) {
+      if (open.has(blocker)) live++;
+      else satisfied++;
+    }
+  }
+
+  return { live, satisfied };
+}

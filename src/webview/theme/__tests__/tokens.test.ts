@@ -28,3 +28,28 @@ describe("readinessHue", () => {
     expect(readinessHue("someday", true)).toBe(GRAPHIC_TOKENS.neutral);
   });
 });
+describe("statusHue assignments", () => {
+  it("paints finished work the accent, not the de-emphasis hue", () => {
+    // contrast.test.ts only checks that each status resolves to *some* theme
+    // token, so the actual assignments have to be pinned here or a wrong one
+    // ships green.
+    expect(statusHue("closed")).toBe(GRAPHIC_TOKENS.accent);
+  });
+
+  it("moves pinned off the accent so closed can own it", () => {
+    expect(statusHue("pinned")).toBe(GRAPHIC_TOKENS.warning);
+    expect(statusHue("pinned")).not.toBe(statusHue("closed"));
+  });
+
+  it("separates closed from both parked and available work", () => {
+    expect(statusHue("closed")).not.toBe(statusHue("deferred"));
+    expect(statusHue("closed")).not.toBe(statusHue("open"));
+  });
+
+  it("keeps closed the same hue on the graph as on a badge", () => {
+    // readinessHue only overrides `open`; everything else falls through, which
+    // is what lets one STATUS_HUE edit repaint the canvas and the lists at once.
+    expect(readinessHue("closed", false)).toBe(statusHue("closed"));
+    expect(readinessHue("closed", true)).toBe(statusHue("closed"));
+  });
+});

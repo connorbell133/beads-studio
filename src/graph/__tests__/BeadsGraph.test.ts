@@ -358,3 +358,90 @@ describe("deriveGraph contract", () => {
     expect(Number.isFinite(g.nodes.n1999.rank)).toBe(true);
   });
 });
+
+describe("deriveGraph structural blocking graph", () => {
+  it("keeps a recorded blocker in dependsOn after it closes", () => {
+    const g = deriveGraph([node("a", { status: "closed" }), node("b")], [blocks("b", "a")]);
+
+    expect(g.nodes.b.dependsOn).toEqual(["a"]);
+    expect(g.nodes.b.blockedBy).toEqual([]);
+  });
+
+  it("holds layoutRank still when a blocker closes, while rank drops", () => {
+    // The whole point: rank moves as work lands, so anything laid out from it
+    // reshuffles. layoutRank is what the picture is allowed to move with.
+    const edges = [blocks("b", "a")];
+    const open = deriveGraph([node("a"), node("b")], edges);
+    const closed = deriveGraph([node("a", { status: "closed" }), node("b")], edges);
+
+    expect(open.nodes.b.layoutRank).toBe(1);
+    expect(closed.nodes.b.layoutRank).toBe(1);
+
+    expect(open.nodes.b.rank).toBe(1);
+    expect(closed.nodes.b.rank).toBe(0);
+  });
+
+  it("holds layoutRank still further down a chain", () => {
+    const edges = [blocks("b", "a"), blocks("c", "b")];
+    const before = deriveGraph([node("a"), node("b"), node("c")], edges);
+    const after = deriveGraph([node("a", { status: "closed" }), node("b"), node("c")], edges);
+
+    expect(before.nodes.c.layoutRank).toBe(2);
+    expect(after.nodes.c.layoutRank).toBe(2);
+  });
+
+  it("leaves leverage on the open graph, so a closed bead unblocks nothing", () => {
+    const g = deriveGraph([node("a", { status: "closed" }), node("b")], [blocks("b", "a")]);
+
+    expect(g.nodes.a.leverage).toBe(0);
+  });
+
+  it("does not resurrect a cycle a closed bead had broken", () => {
+    // Structurally a -> b -> a is still a loop, but b is done, so nothing is
+    // actually tangled. The header must not warn about it.
+    const g = deriveGraph(
+      [node("a"), node("b", { status: "closed" })],
+      [blocks("a", "b"), blocks("b", "a")]
+    );
+
+    expect(g.cycles).toEqual([]);
+    expect(g.hasCycle).toBe(false);
+  });
+
+  it("still ranks every node when the structural graph is cyclic", () => {
+    // The trap: findCycles runs on the open graph, so its tangled set does not
+    // name these ids. Without its own detection the Kahn walk stalls and both
+    // nodes silently keep layoutRank 0.
+    const g = deriveGraph(
+      [node("a", { priority: 0 }), node("b", { status: "closed", priority: 1 })],
+      [blocks("a", "b"), blocks("b", "a")]
+    );
+
+    expect(g.nodes.a.layoutRank).not.toBe(g.nodes.b.layoutRank);
+    expect(Number.isFinite(g.nodes.a.layoutRank)).toBe(true);
+    expect(Number.isFinite(g.nodes.b.layoutRank)).toBe(true);
+  });
+
+  it("empties blockerChain once the only blocker closes", () => {
+    const g = deriveGraph([node("a", { status: "closed" }), node("b")], [blocks("b", "a")]);
+
+    expect(g.nodes.b.blockerChain).toEqual([]);
+    expect(g.nodes.b.ready).toBe(true);
+  });
+
+  it("records a blocker outside the node set in both views", () => {
+    const g = deriveGraph([node("b")], [blocks("b", "ghost")]);
+
+    expect(g.nodes.b.dependsOn).toEqual(["ghost"]);
+    expect(g.nodes.b.blockedBy).toEqual(["ghost"]);
+  });
+
+  it("ignores non-blocking edges in dependsOn", () => {
+    const g = deriveGraph(
+      [node("a"), node("b")],
+      [{ from: "b", to: "a", type: "parent-child" }]
+    );
+
+    expect(g.nodes.b.dependsOn).toEqual([]);
+  });
+});

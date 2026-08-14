@@ -27,11 +27,16 @@ export interface GraphToolbarProps {
   /** Blast radius needs a bead to radiate from; without one its button explains why. */
   anchored: boolean;
 
-  /** What the epic lens can anchor on. Empty disables that lens's tab. */
+  /** What the epic lens can anchor on, already filtered. Empty disables that lens's tab. */
   epics: EpicOption[];
   /** The epic the epic lens is anchored on. */
   epicId: string | null;
   onEpicChange: (epicId: string) => void;
+  /** Whether finished epics are being listed alongside the live ones. */
+  showCompleted: boolean;
+  onShowCompletedChange: (showCompleted: boolean) => void;
+  /** Finished epics the default filter is holding back. 0 hides the toggle. */
+  hiddenEpicCount: number;
 
   query: string;
   onQueryChange: (query: string) => void;
@@ -68,6 +73,9 @@ export function GraphToolbar({
   epics,
   epicId,
   onEpicChange,
+  showCompleted,
+  onShowCompletedChange,
+  hiddenEpicCount,
   query,
   onQueryChange,
   onQueryKeyDown,
@@ -141,6 +149,31 @@ export function GraphToolbar({
               </span>
             </DropdownItem>
           ))}
+
+          {/* Not a DropdownItem: that closes the menu on click, and the point
+              of the toggle is to see the list it just changed. Named with its
+              count so the omission is visible rather than inferred from a
+              shorter list than you remembered. */}
+          {hiddenEpicCount > 0 && (
+            <button
+              type="button"
+              className="dropdown-item graph-canvas-epic-toggle"
+              aria-pressed={showCompleted}
+              title={
+                showCompleted
+                  ? "List only epics with work still open"
+                  : "Also list epics whose every bead has closed"
+              }
+              onClick={() => onShowCompletedChange(!showCompleted)}
+            >
+              <span className="graph-canvas-epic-toggle-box" aria-hidden="true">
+                {showCompleted ? "✓" : ""}
+              </span>
+              <span className="graph-canvas-epic-option">
+                Show completed ({hiddenEpicCount})
+              </span>
+            </button>
+          )}
         </Dropdown>
       )}
 

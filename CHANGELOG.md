@@ -11,8 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Dependency graph refreshes itself every 5 seconds while its tab is visible, and carries a Refresh button for reading it again now (vsbeads-1ea)
 
+### Changed
+
+- Closed beads read purple, matching the epic they belong to, and pinned beads move to yellow — on the graph, the Issues list, the board, and the details panel
+- Epic picker lists only epics with work still open, behind a "Show completed" toggle; the epic being viewed stays listed after it finishes
+
 ### Fixed
 
+- Epic graphs keep their shape as work closes: a satisfied dependency is drawn recessed instead of deleted, and layout no longer re-flows every time a blocker lands
 - Issues list keeps its filters, search text, and preset across a manual Refresh (vsbeads-fvl)
 
 ## [1.0.0] - 2026-08-12

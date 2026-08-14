@@ -52,15 +52,27 @@ export function deriveGraph(
   // unknown source has nothing to hang derived facts on.
   const blockEdges = inputEdges.filter((e) => e.type === BLOCKS && byId.has(e.from));
 
-  // blockedBy: the open blockers of each bead. blocksFor: the reverse, used for
-  // leverage and for the topological walk.
+  // Two views of the same edges, split by what reads them.
+  //
+  // blockedBy / blocksFor drop an edge once its blocker closes: a closed
+  // blocker is not in the way, so it must not gate readiness, inflate leverage,
+  // or resurrect a cycle it has already broken.
+  //
+  // dependsOn / dependents keep every recorded edge. Layout and the drawn
+  // picture read these, because deleting an edge on close is what made an epic
+  // reshuffle itself mid-flight - the arrow vanished AND every downstream rank
+  // shifted, so the whole subtree was laid out again.
   const blockedBy = new Map<string, string[]>(ids.map((id) => [id, []]));
   const blocksFor = new Map<string, string[]>(ids.map((id) => [id, []]));
+  const dependsOn = new Map<string, string[]>(ids.map((id) => [id, []]));
+  const dependents = new Map<string, string[]>(ids.map((id) => [id, []]));
   for (const edge of blockEdges) {
-    if (isClosed(edge.to)) continue;
-    blockedBy.get(edge.from)?.push(edge.to);
+    dependsOn.get(edge.from)?.push(edge.to);
     // The blocker may be outside the node set; only track reverse edges we can
     // attribute to a real bead.
+    if (byId.has(edge.to)) dependents.get(edge.to)?.push(edge.from);
+    if (isClosed(edge.to)) continue;
+    blockedBy.get(edge.from)?.push(edge.to);
     if (byId.has(edge.to)) blocksFor.get(edge.to)?.push(edge.from);
   }
 
@@ -68,6 +80,19 @@ export function deriveGraph(
   const inCycle = new Set(cycles.flat());
   const rank = computeRanks(ids, blockedBy, blocksFor, byId, inCycle);
   const leverage = computeLeverage(ids, blocksFor, isClosed);
+
+  // The structural pass needs its own tangled set rather than reusing
+  // `inCycle`. A cycle that a closed bead had broken is live again over
+  // `dependsOn`, and those nodes never reach in-degree zero - so the Kahn walk
+  // stalls on ids `inCycle` does not name, and they would keep layoutRank 0
+  // with nothing to notice it. Same detection, structural input.
+  const layoutRank = computeRanks(
+    ids,
+    dependsOn,
+    dependents,
+    byId,
+    new Set(findCycles(ids, dependsOn).flat())
+  );
   const { parentOf, childrenOf } = resolveHierarchy(inputNodes, inputEdges, byId);
 
   const nodes: Record<string, BeadGraphNode> = {};
@@ -89,8 +114,10 @@ export function deriveGraph(
     const node: BeadGraphNode = {
       id,
       blockedBy: blockers,
+      dependsOn: (dependsOn.get(id) ?? []).slice().sort(compareIds(layoutRank)),
       ready: isReady,
       rank: rank.get(id) ?? 0,
+      layoutRank: layoutRank.get(id) ?? 0,
       leverage: leverage.get(id) ?? 0,
       blockerChain: longestBlockerChain(id, blockedBy, rank),
       children,

@@ -32,10 +32,26 @@ export interface BeadGraphNode {
   id: string;
   /** Ids of blockers that have not closed yet. Empty means nothing is in the way. */
   blockedBy: string[];
+  /**
+   * Every recorded blocker, closed or not.
+   *
+   * `blockedBy` answers "what is still in my way" and shrinks as work lands.
+   * This answers "what was this ever sequenced behind", which does not change
+   * when a blocker closes. Drawing surfaces read this so the picture of an epic
+   * holds still while it is worked; readiness reads `blockedBy` so a satisfied
+   * dependency never keeps a bead looking stuck.
+   */
+  dependsOn: string[];
   /** Status is exactly open, nothing blocks it, and it is real work. */
   ready: boolean;
   /** Longest-path depth over open blockers. 0 means no blockers. */
   rank: number;
+  /**
+   * Longest-path depth over `dependsOn`. The layout counterpart to `rank`:
+   * stable for the life of the graph, because closing a blocker does not
+   * remove the edge it is computed from.
+   */
+  layoutRank: number;
   /** How many beads this bead's closure would unblock, transitively. */
   leverage: number;
   /** The deepest open blocker path out of this bead, nearest blocker first. */
