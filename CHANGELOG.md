@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Tree mode heads an epic's own group even before it has any tasks, instead of filing it under "No epic"
+
 ## [1.1.0] - 2026-08-14
 
 ### Added

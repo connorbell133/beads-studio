@@ -16,10 +16,10 @@
  *   `roots` - parentless beads that have children, with their descendants
  *   nested underneath. This is the hierarchy.
  *
- *   `orphans` - parentless beads with no children. Standalone work that sits
- *   outside every epic. On a healthy project this lane is small; when it is
- *   large, that is the finding, which is why it is a lane and not a silent
- *   append to the root list.
+ *   `orphans` - parentless beads with no children, minus anything named a
+ *   container. Standalone work that sits outside every epic. On a healthy
+ *   project this lane is small; when it is large, that is the finding, which is
+ *   why it is a lane and not a silent append to the root list.
  *
  * Traversals are iterative and cycles are broken before any walk, so a
  * parent-child loop reports itself instead of expanding forever.
@@ -87,6 +87,16 @@ export interface BuildTreeOptions {
    * finding, and flattening it away hides it.
    */
   matched?: Iterable<string>;
+  /**
+   * Ids that head their own group even with nothing under them.
+   *
+   * Containment alone decides the rest of this split, which files a freshly
+   * created epic - one that has no tasks yet - in the same lane as standalone
+   * work. "No epic" is then printed over a row that is itself an epic. An empty
+   * epic is not loose work; it is a place work will go, and the epic picker on
+   * the graph already lists it as one.
+   */
+  containers?: Iterable<string>;
 }
 
 export function buildTree<T extends { id: string }>(
@@ -96,6 +106,7 @@ export function buildTree<T extends { id: string }>(
 ): BeadTree<T> {
   const matched = options.matched ? new Set(options.matched) : null;
   const isMatch = (id: string): boolean => (matched ? matched.has(id) : true);
+  const containers = options.containers ? new Set(options.containers) : null;
 
   if (!graph) {
     // No graph means no hierarchy is known. Every bead is its own root, rather
@@ -162,10 +173,12 @@ export function buildTree<T extends { id: string }>(
         continue;
       }
     }
-    // Having children is what makes a bead a hierarchy root. Whether those
-    // children survived the filter is a display question, not a structural one.
+    // Having children is what makes a bead a hierarchy root - or being named a
+    // container, which is how an epic with nothing in it yet still heads its
+    // own group instead of landing in the orphan lane. Whether those children
+    // survived the filter is a display question, not a structural one.
     const hasChildren = (graph.nodes[bead.id]?.children.length ?? 0) > 0;
-    (hasChildren ? roots : orphans).push(row);
+    (hasChildren || containers?.has(bead.id) ? roots : orphans).push(row);
   }
 
   return { roots, orphans, cycleIds, rowCount: rows.size, matchedCount };

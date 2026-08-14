@@ -240,9 +240,17 @@ export function LinearList({
   onRowMouseEnter,
   onRowMouseLeave,
 }: LinearListProps): React.ReactElement {
+  // An epic heads its own group even with nothing under it yet. Only once the
+  // graph is known: without it there is no hierarchy for anything to be the top
+  // of, and every bead is already its own root.
+  const isEpic = (bead: { type?: string }): boolean => Boolean(graph) && bead.type === "epic";
+  const epicIds = useMemo(
+    () => beads.filter(isEpic).map((bead) => bead.id),
+    [beads, graph]
+  );
   const tree = useMemo(
-    () => buildTree(beads, graph, { matched }),
-    [beads, graph, matched]
+    () => buildTree(beads, graph, { matched, containers: epicIds }),
+    [beads, graph, matched, epicIds]
   );
 
   // Who waits on whom, inverted from each node's open blockers. Powers the
@@ -260,20 +268,25 @@ export function LinearList({
     return map;
   }, [graph]);
 
-  // Roots with children are the epic groups; childless roots (the no-graph
-  // fallback) and orphans are the loose beads under "No epic".
+  // Epics head a group whether or not anything is under them; so does any root
+  // with visible children. What is left - non-epic roots with nothing showing,
+  // which is the no-graph fallback and roots whose children were all filtered
+  // away - joins the orphans under "No epic".
   const groups = useMemo(
     () =>
       tree.roots
-        .filter((root) => root.subRows?.length)
+        .filter((root) => root.subRows?.length || isEpic(root))
         .sort(
           (a, b) => (a.priority ?? 5) - (b.priority ?? 5) || a.id.localeCompare(b.id)
         ),
-    [tree]
+    [tree, graph]
   );
   const loose = useMemo(
-    () => [...tree.roots.filter((root) => !root.subRows?.length), ...tree.orphans],
-    [tree]
+    () => [
+      ...tree.roots.filter((root) => !root.subRows?.length && !isEpic(root)),
+      ...tree.orphans,
+    ],
+    [tree, graph]
   );
 
   const expandedRows = expanded === true ? {} : expanded;

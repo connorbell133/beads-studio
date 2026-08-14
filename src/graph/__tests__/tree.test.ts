@@ -409,3 +409,57 @@ describe("critical path on epic rows", () => {
     expect(epic?.treeCriticalPath).toBe(1);
   });
 });
+
+describe("containers", () => {
+  /** Two freshly filed epics with nothing under them, plus one loose task. */
+  const fresh = () => {
+    const nodes = [epic("e1"), epic("e2"), node("loner")];
+    return {
+      graph: deriveGraph(nodes, [], { complete: true }),
+      beads: nodes.map((n) => ({ id: n.id })),
+    };
+  };
+
+  it("lands an empty epic in orphans when nothing names it a container", () => {
+    // The behaviour that put "No epic" over a row that is itself an epic.
+    const { graph, beads } = fresh();
+    const tree = buildTree(beads, graph);
+
+    expect(ids(tree.roots)).toEqual([]);
+    expect(ids(tree.orphans)).toEqual(["e1", "e2", "loner"]);
+  });
+
+  it("makes an empty epic a root of its own once named", () => {
+    const { graph, beads } = fresh();
+    const tree = buildTree(beads, graph, { containers: ["e1", "e2"] });
+
+    expect(ids(tree.roots)).toEqual(["e1", "e2"]);
+    expect(ids(tree.orphans)).toEqual(["loner"]);
+  });
+
+  it("gives that root no children rather than inventing any", () => {
+    const { graph, beads } = fresh();
+    const tree = buildTree(beads, graph, { containers: ["e1"] });
+
+    expect(childIds(tree.roots[0])).toEqual([]);
+  });
+
+  it("leaves an epic that does have children exactly where it was", () => {
+    const nodes = [epic("e1"), node("t1", { parent: "e1" })];
+    const graph = deriveGraph(nodes, [parentEdge("t1", "e1")], { complete: true });
+    const beads = nodes.map((n) => ({ id: n.id }));
+
+    const tree = buildTree(beads, graph, { containers: ["e1"] });
+
+    expect(ids(tree.roots)).toEqual(["e1"]);
+    expect(childIds(tree.roots[0])).toEqual(["t1"]);
+    expect(tree.orphans).toEqual([]);
+  });
+
+  it("does not promote a childless bead that is not a container", () => {
+    const { graph, beads } = fresh();
+    const tree = buildTree(beads, graph, { containers: ["e1"] });
+
+    expect(ids(tree.orphans)).toEqual(["e2", "loner"]);
+  });
+});
