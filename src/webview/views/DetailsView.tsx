@@ -7,9 +7,10 @@
  * - Metadata display
  */
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   Bead,
+  BeadWriteExpectation,
   BeadStatus,
   BeadPriority,
   BeadDependency,
@@ -192,7 +193,13 @@ interface DetailsViewProps {
   renderMarkdown?: boolean;
   userId?: string;
   knownAssignees?: string[];
-  onUpdateBead: (beadId: string, updates: Partial<Bead>) => void;
+  /** Bumped when a write was refused; pending edits are dropped. */
+  writeConflicts?: number;
+  onUpdateBead: (
+    beadId: string,
+    updates: Partial<Bead>,
+    expect?: BeadWriteExpectation
+  ) => void;
   onAddDependency: (beadId: string, targetId: string, dependencyType: DependencyType, reverse: boolean) => void;
   onRemoveDependency: (beadId: string, dependsOnId: string) => void;
   onAddComment?: (beadId: string, text: string) => void;
@@ -215,6 +222,7 @@ export function DetailsView({
   renderMarkdown = true,
   userId = "",
   knownAssignees = [],
+  writeConflicts = 0,
   onUpdateBead,
   onAddDependency,
   onRemoveDependency,
@@ -240,32 +248,77 @@ export function DetailsView({
     setEditedBead({});
   }, [bead?.id]);
 
+  /**
+   * What each guarded field showed before the user started changing it.
+   *
+   * `editedBead` cannot answer this: by save time it holds the target value,
+   * and guarding on the target would either pass vacuously or blame an agent
+   * for the user's own edit. Captured on first touch instead, and dropped
+   * whenever real data arrives - at which point the panel is truth again.
+   */
+  const baseline = useRef<BeadWriteExpectation>({});
+
+  const rememberBaseline = useCallback(
+    (field: keyof Bead) => {
+      if (field !== "status" && field !== "assignee") return;
+      if (baseline.current[field] !== undefined) return;
+      // "" is the real value for an unassigned bead, and bd's --if-assignee ''
+      // means exactly that, so it is stored rather than treated as absent.
+      baseline.current[field] = (editedBead[field] ?? bead?.[field] ?? "") as string;
+    },
+    [bead, editedBead]
+  );
+
+  /** The preconditions for the guarded fields this write touches. */
+  const expectationFor = useCallback((updates: Partial<Bead>): BeadWriteExpectation => {
+    const expect: BeadWriteExpectation = {};
+    if (updates.status !== undefined && baseline.current.status !== undefined) {
+      expect.status = baseline.current.status;
+    }
+    if (updates.assignee !== undefined && baseline.current.assignee !== undefined) {
+      expect.assignee = baseline.current.assignee;
+    }
+    return expect;
+  }, []);
+
   // Clear pending edits when bead data updates (e.g., after save + mutation)
   useEffect(() => {
+    baseline.current = {};
     if (!editMode && Object.keys(editedBead).length > 0) {
       setEditedBead({});
     }
   }, [bead?.updatedAt]);
 
+  // A refused write left bd untouched, so the edited values on screen are
+  // fiction. Drop them and fall back to whatever the reload brings.
+  useEffect(() => {
+    if (writeConflicts === 0) return;
+    baseline.current = {};
+    setEditedBead({});
+    setEditMode(false);
+  }, [writeConflicts]);
+
   const handleSave = useCallback(() => {
     if (bead && Object.keys(editedBead).length > 0) {
-      onUpdateBead(bead.id, editedBead);
+      onUpdateBead(bead.id, editedBead, expectationFor(editedBead));
       setEditMode(false);
       // Don't clear editedBead here - keep showing edited values until
       // mutation event updates the bead prop, which triggers the useEffect below
     }
-  }, [bead, editedBead, onUpdateBead]);
+  }, [bead, editedBead, expectationFor, onUpdateBead]);
 
   // Inline update - saves immediately without entering edit mode
   // Also optimistically updates local state for instant feedback
   const handleInlineUpdate = useCallback(
     (field: keyof Bead, value: unknown) => {
       if (bead) {
+        rememberBaseline(field);
+        const updates = { [field]: value } as Partial<Bead>;
         setEditedBead((prev) => ({ ...prev, [field]: value }));
-        onUpdateBead(bead.id, { [field]: value });
+        onUpdateBead(bead.id, updates, expectationFor(updates));
       }
     },
-    [bead, onUpdateBead]
+    [bead, expectationFor, onUpdateBead, rememberBaseline]
   );
 
   const handleCancel = useCallback(() => {
@@ -275,9 +328,10 @@ export function DetailsView({
 
   const handleFieldChange = useCallback(
     (field: keyof Bead, value: unknown) => {
+      rememberBaseline(field);
       setEditedBead((prev) => ({ ...prev, [field]: value }));
     },
-    []
+    [rememberBaseline]
   );
 
   const handleAddLabel = useCallback(() => {

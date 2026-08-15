@@ -5,9 +5,10 @@
  * Supports drag-and-drop to change status.
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Bead,
+  BeadWriteExpectation,
   BeadStatus,
   BeadType,
   STATUS_LABELS,
@@ -24,7 +25,19 @@ interface KanbanBoardProps {
   beads: Bead[];
   selectedBeadId: string | null;
   onSelectBead: (beadId: string) => void;
-  onUpdateBead?: (beadId: string, updates: Partial<Bead>) => void;
+  onUpdateBead?: (
+    beadId: string,
+    updates: Partial<Bead>,
+    expect?: BeadWriteExpectation
+  ) => void;
+  /**
+   * Bumped when the extension reports a refused write.
+   *
+   * The optimistic override below only clears when real data agrees with it, so
+   * a drop bd never wrote would leave the card parked in the wrong column
+   * indefinitely. This is the signal that the move did not happen.
+   */
+  writeConflicts?: number;
   /** Whether any filters are active (affects empty state messaging) */
   hasActiveFilters?: boolean;
   /** Unfiltered counts per status (to show "0 of N" when filtering) */
@@ -36,7 +49,7 @@ interface KanbanBoardProps {
 // actually have them, so the board stays narrow on typical projects.
 const CORE_COLUMNS: BeadStatus[] = ["open", "in_progress", "blocked", "closed"];
 
-export function KanbanBoard({ beads, selectedBeadId, onSelectBead, onUpdateBead, hasActiveFilters, unfilteredCounts }: KanbanBoardProps): React.ReactElement {
+export function KanbanBoard({ beads, selectedBeadId, onSelectBead, onUpdateBead, writeConflicts = 0, hasActiveFilters, unfilteredCounts }: KanbanBoardProps): React.ReactElement {
   // Track which columns are collapsed (closed is collapsed by default)
   const [collapsedColumns, setCollapsedColumns] = useState<Set<BeadStatus>>(new Set(["closed"]));
   // Track which column is being dragged over
@@ -63,6 +76,12 @@ export function KanbanBoard({ beads, selectedBeadId, onSelectBead, onUpdateBead,
       return bead;
     });
   }, [beads, optimisticStatus]);
+
+  // A refused write means no move landed anywhere, so every pending override is
+  // suspect - the refresh that follows carries the real columns.
+  useEffect(() => {
+    if (writeConflicts > 0) setOptimisticStatus(new Map());
+  }, [writeConflicts]);
 
   const toggleColumn = (status: BeadStatus) => {
     setCollapsedColumns((prev) => {
@@ -97,13 +116,16 @@ export function KanbanBoard({ beads, selectedBeadId, onSelectBead, onUpdateBead,
     setDragOverColumn(null);
 
     const beadId = e.dataTransfer.getData("text/plain");
-    const bead = beads.find((b) => b.id === beadId);
+    // The column the card was actually sitting in, override included: a second
+    // drag before the first write lands must guard on the first drag's target,
+    // not on the status the last refresh reported.
+    const bead = effectiveBeads.find((b) => b.id === beadId);
 
     // Only update if status actually changed
     if (bead && bead.status !== newStatus && onUpdateBead) {
       // Optimistic update - move card immediately
       setOptimisticStatus((prev) => new Map(prev).set(beadId, newStatus));
-      onUpdateBead(beadId, { status: newStatus });
+      onUpdateBead(beadId, { status: newStatus }, { status: bead.status });
     }
   };
 

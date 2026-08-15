@@ -337,6 +337,17 @@ export interface WebviewSettings {
 
 
 // Messages sent from extension to webview
+/**
+ * The pre-edit values a surface saw, sent alongside an edit.
+ *
+ * Only the fields being changed matter; a surface that cannot name a pre-edit
+ * value omits it rather than inventing one.
+ */
+export interface BeadWriteExpectation {
+  status?: string;
+  assignee?: string;
+}
+
 export type ExtensionToWebviewMessage =
   | { type: "setViewType"; viewType: string }
   | { type: "setProject"; project: BeadsProject | null }
@@ -353,6 +364,15 @@ export type ExtensionToWebviewMessage =
   | { type: "setLoading"; loading: boolean }
   | { type: "setError"; error: string | null }
   | { type: "setSettings"; settings: WebviewSettings }
+  /**
+   * A write bd refused because the bead changed underneath the surface.
+   *
+   * The notification is already on screen by the time this arrives; the message
+   * exists so surfaces holding optimistic state can drop it. Without it a
+   * Kanban card that was dragged into a column bd never wrote sits there
+   * forever, because the override only clears when real data agrees with it.
+   */
+  | { type: "writeConflict"; beadId: string; message: string }
   | { type: "refresh" };
 
 // Messages sent from webview to extension
@@ -367,7 +387,12 @@ export type WebviewToExtensionMessage =
   | { type: "openDoltLog" }
   | { type: "openProjectFolder" }
   | { type: "selectBead"; beadId: string }
-  | { type: "updateBead"; beadId: string; updates: Partial<Bead> }
+  /**
+   * `expect` carries the values the surface was looking at before the edit, so
+   * the write can be conditioned on them instead of overwriting whatever landed
+   * in between. Absent means "write unconditionally", the pre-guard behaviour.
+   */
+  | { type: "updateBead"; beadId: string; updates: Partial<Bead>; expect?: BeadWriteExpectation }
   | { type: "deleteBead"; beadId: string }
   | { type: "addDependency"; beadId: string; targetId: string; dependencyType: DependencyType; reverse: boolean }
   | { type: "removeDependency"; beadId: string; dependsOnId: string }

@@ -1,11 +1,24 @@
 import * as vscode from "vscode";
 import { BaseViewProvider } from "../BaseViewProvider";
+import type {
+  BeadsBackend,
+  UpdateIssueArgs,
+  UpdateOutcome,
+} from "../../backend/BeadsBackend";
 import { BeadsProjectManager } from "../../backend/BeadsProjectManager";
 import {
+  BeadWriteExpectation,
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
 } from "../../backend/types";
 import { Logger } from "../../utils/logger";
+
+/** Mirrors BeadsWebviewHost's protected write path, which tests cannot index. */
+type GuardedUpdate = (
+  client: BeadsBackend,
+  args: UpdateIssueArgs,
+  expect: BeadWriteExpectation | undefined
+) => Promise<void>;
 
 /**
  * Characterization coverage for the shared webview message switch.
@@ -22,6 +35,18 @@ class TestProvider extends BaseViewProvider {
 
   protected async loadData(reason?: string): Promise<void> {
     this.loadDataCalls.push(reason);
+  }
+
+  public guardedUpdate(
+    client: BeadsBackend,
+    args: UpdateIssueArgs,
+    expect?: BeadWriteExpectation
+  ): Promise<void> {
+    return (this as unknown as { applyGuardedUpdate: GuardedUpdate }).applyGuardedUpdate(
+      client,
+      args,
+      expect
+    );
   }
 
   protected async initializeView(): Promise<void> {
@@ -185,5 +210,94 @@ describe("webview message handling", () => {
     await expect(
       provider.handle({ type: "not-a-real-message" } as unknown as WebviewToExtensionMessage)
     ).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * The write path every surface shares.
+ *
+ * These pin the part that makes a lost race visible: the precondition actually
+ * leaves for bd, and a refusal ends with the user told and the surface reloaded
+ * rather than silently showing a value that was never written.
+ */
+describe("guarded writes", () => {
+  function clientReturning(outcome: UpdateOutcome) {
+    const update = jest.fn().mockResolvedValue(outcome);
+    return { client: { update } as unknown as BeadsBackend, update };
+  }
+
+  it("attaches the surface's pre-edit status to the write", async () => {
+    const { provider } = createProvider();
+    const { client, update } = clientReturning({
+      ok: true,
+      issue: { id: "bd-1" } as never,
+    });
+
+    await provider.guardedUpdate(client, { id: "bd-1", status: "closed" }, { status: "open" });
+
+    expect(update).toHaveBeenCalledWith({
+      id: "bd-1",
+      status: "closed",
+      guard: { ifStatus: "open" },
+    });
+  });
+
+  it("writes unconditionally when the surface named no pre-edit value", async () => {
+    const { provider } = createProvider();
+    const { client, update } = clientReturning({
+      ok: true,
+      issue: { id: "bd-1" } as never,
+    });
+
+    await provider.guardedUpdate(client, { id: "bd-1", status: "closed" }, undefined);
+
+    expect(update).toHaveBeenCalledWith({ id: "bd-1", status: "closed", guard: undefined });
+  });
+
+  it("leaves the surface untouched when the write lands", async () => {
+    const { provider, posted } = createProvider();
+    const { client } = clientReturning({ ok: true, issue: { id: "bd-1" } as never });
+
+    await provider.guardedUpdate(client, { id: "bd-1", status: "closed" }, { status: "open" });
+
+    expect(posted.filter((m) => m.type === "writeConflict")).toHaveLength(0);
+    expect(provider.loadDataCalls).toEqual([]);
+  });
+
+  it("tells the user and reloads when bd refuses the write", async () => {
+    const warn = jest.spyOn(vscode.window, "showWarningMessage").mockReturnValue(undefined as never);
+    const { provider, posted } = createProvider();
+    const { client } = clientReturning({
+      ok: false,
+      conflict: {
+        id: "bd-1",
+        field: "status",
+        expected: "open",
+        actual: "in_progress",
+        attempted: "closed",
+      },
+    });
+
+    await provider.guardedUpdate(client, { id: "bd-1", status: "closed" }, { status: "open" });
+
+    const message = warn.mock.calls[0][0] as string;
+    expect(message).toContain("In Progress");
+    expect(message).toContain("Closed");
+    expect(posted).toContainEqual({ type: "writeConflict", beadId: "bd-1", message });
+    // Without the reload the panel keeps showing the value bd never wrote.
+    expect(provider.loadDataCalls).toEqual(["background"]);
+  });
+
+  it("still reports a broken command as an error, not a conflict", async () => {
+    const error = jest.spyOn(vscode.window, "showErrorMessage").mockReturnValue(undefined as never);
+    const { provider, posted } = createProvider();
+    const client = {
+      update: jest.fn().mockRejectedValue(new Error("bd exploded")),
+    } as unknown as BeadsBackend;
+
+    await provider.guardedUpdate(client, { id: "bd-1", status: "closed" }, { status: "open" });
+
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("bd exploded"));
+    expect(posted.filter((m) => m.type === "writeConflict")).toHaveLength(0);
   });
 });

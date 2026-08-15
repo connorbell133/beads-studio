@@ -115,15 +115,13 @@ export class BeadsPanelViewProvider extends BaseViewProvider {
 
     switch (message.type) {
       case "updateBead":
-        try {
-          await client.update({
-            id: message.beadId,
-            ...message.updates,
-          });
-          // Data will refresh via mutation events
-        } catch (err) {
-          vscode.window.showErrorMessage(`Failed to update bead: ${err}`);
-        }
+        // Guarded on the values the list/board was showing, so a drag or an
+        // inline status pick cannot overwrite an agent's concurrent edit.
+        await this.applyGuardedUpdate(
+          client,
+          { id: message.beadId, ...message.updates },
+          message.expect
+        );
         break;
 
       case "deleteBead":

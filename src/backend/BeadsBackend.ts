@@ -58,6 +58,52 @@ export interface CreateIssueArgs {
   labels?: string[];
 }
 
+/**
+ * Preconditions attached to a write so a concurrent actor's edit is not
+ * clobbered.
+ *
+ * The extension computes every write from a snapshot that can be seconds old
+ * (graph poll plus list cache), and agents write to the same rows. Without a
+ * precondition the operator's stale value silently overwrites whatever landed
+ * in between. bd checks these server-side and writes nothing on a mismatch.
+ *
+ * Values must be exactly what bd stores: `--if-status` rejects the aliases
+ * `--status` accepts (verified on bd 1.2.1 - `--if-status in-progress` exits 1
+ * as an invalid value). normalizeStatus already canonicalizes to bd's built-in
+ * names and passes custom statuses through untouched, so a normalized status is
+ * a safe guard value.
+ */
+export interface WriteGuard {
+  /** Apply only if the stored status still equals this. */
+  ifStatus?: string;
+  /** Apply only if the stored assignee still equals this ("" means unassigned). */
+  ifAssignee?: string;
+}
+
+/** Which precondition bd rejected, and the values on both sides of it. */
+export interface WriteConflict {
+  id: string;
+  field: "status" | "assignee";
+  /** What the UI believed when it built the write. */
+  expected?: string;
+  /** What bd reports the value actually is now, when it can be recovered. */
+  actual?: string;
+  /** What the user was trying to set, when the conflicting field was being written. */
+  attempted?: string;
+}
+
+/**
+ * The outcome of a guarded write.
+ *
+ * A rejected precondition is an ordinary outcome, not a failure: bd wrote
+ * nothing and the caller has to show the user current truth. Modelling it as a
+ * result rather than an exception keeps it distinguishable from the thrown
+ * errors that mean "the command actually broke".
+ */
+export type UpdateOutcome =
+  | { ok: true; issue: BeadsIssue }
+  | { ok: false; conflict: WriteConflict };
+
 export interface UpdateIssueArgs {
   id: string;
   title?: string;
@@ -76,6 +122,8 @@ export interface UpdateIssueArgs {
   add_labels?: string[];
   remove_labels?: string[];
   set_labels?: string[];
+  /** Preconditions; omitted means an unconditional write, as before. */
+  guard?: WriteGuard;
 }
 
 export interface CloseIssueArgs {
@@ -123,7 +171,20 @@ export interface BeadsBackend {
   listGraph(): Promise<BeadsGraphPayload>;
   show(id: string): Promise<BeadsIssue | null>;
   create(args: CreateIssueArgs): Promise<BeadsIssue>;
-  update(args: UpdateIssueArgs): Promise<BeadsIssue>;
+  /**
+   * Applies a field update, optionally guarded by `args.guard`.
+   *
+   * Resolves to `{ ok: false }` when bd refused because a precondition no
+   * longer held. An unguarded call can only resolve `{ ok: true }` or throw.
+   */
+  update(args: UpdateIssueArgs): Promise<UpdateOutcome>;
+  /**
+   * Closes an issue.
+   *
+   * Unguarded: bd 1.2.1's `close` has no `--if-status`/`--if-assignee` (only
+   * `update` does), so there is no precondition to send. Every close the UI
+   * performs today goes through `update --status closed`, which is guarded.
+   */
   close(args: CloseIssueArgs): Promise<BeadsIssue>;
   addDependency(args: DependencyArgs): Promise<void>;
   removeDependency(args: DependencyArgs): Promise<void>;

@@ -113,6 +113,18 @@ export interface WebviewSettings {
   tooltipHoverDelay: number; // 0 = disabled
 }
 
+/**
+ * The pre-edit values a surface saw, sent with an edit so the extension can
+ * condition the write on them instead of clobbering a concurrent agent.
+ *
+ * Mirrors BeadWriteExpectation in src/backend/types.ts; the two message unions
+ * are already parallel copies.
+ */
+export interface BeadWriteExpectation {
+  status?: string;
+  assignee?: string;
+}
+
 // Messages from extension to webview
 export type ExtensionMessage =
   | { type: "setViewType"; viewType: string }
@@ -130,6 +142,8 @@ export type ExtensionMessage =
   | { type: "setSettings"; settings: WebviewSettings }
   | { type: "refresh" }
   | { type: "showToast"; text: string }
+  /** A write bd refused; surfaces holding optimistic state must drop it. */
+  | { type: "writeConflict"; beadId: string; message: string }
   | { type: "applyIssuesPreset"; presetId: string }
   | { type: "setPulse"; events: { id: string; at: number }[] };
 
@@ -145,7 +159,7 @@ export type WebviewMessage =
   | { type: "openDoltLog" }
   | { type: "openProjectFolder" }
   | { type: "selectBead"; beadId: string }
-  | { type: "updateBead"; beadId: string; updates: Partial<Bead> }
+  | { type: "updateBead"; beadId: string; updates: Partial<Bead>; expect?: BeadWriteExpectation }
   | { type: "deleteBead"; beadId: string }
   | { type: "addDependency"; beadId: string; targetId: string; dependencyType: DependencyType; reverse: boolean }
   | { type: "removeDependency"; beadId: string; dependsOnId: string }

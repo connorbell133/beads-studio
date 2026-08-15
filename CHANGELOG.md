@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Status and assignee edits are conditioned on the value you were looking at, so an agent's concurrent change is reported instead of silently overwritten
+
 ### Fixed
 
 - Tree mode heads an epic's own group even before it has any tasks, instead of filing it under "No epic"
+- A board card dragged into a column the write never reached snaps back instead of sitting there as if it landed
 
 ## [1.1.0] - 2026-08-14
 
