@@ -1,3 +1,4 @@
+import type { DriftCommit, RawDiffEntry } from "../graph/drift";
 import type { BeadEdge, RawDependency } from "./types";
 
 /**
@@ -121,6 +122,23 @@ export interface BeadsBackend {
    * use this one; filtering hidden types is a display concern.
    */
   listGraph(): Promise<BeadsGraphPayload>;
+  /**
+   * `bd diff <fromRef> <toRef>` - which beads changed between two commits.
+   *
+   * Rows come back uninterpreted; src/graph/drift.ts turns them into
+   * annotations. `toRef` defaults to HEAD. Throws with bd's own message when
+   * the ref does not resolve, which is the common case: the user is comparing
+   * against a commit that has since been compacted away.
+   */
+  diffRefs(fromRef: string, toRef?: string): Promise<RawDiffEntry[]>;
+  /**
+   * Recent Dolt commits, newest first, for choosing a comparison point.
+   *
+   * Best-effort and possibly partial: see the implementation note on the CLI
+   * backend. Each commit carries its own timestamp, so a caller resolving
+   * "yesterday" can report the moment it actually landed on.
+   */
+  recentCommits(limit?: number): Promise<DriftCommit[]>;
   show(id: string): Promise<BeadsIssue | null>;
   create(args: CreateIssueArgs): Promise<BeadsIssue>;
   update(args: UpdateIssueArgs): Promise<BeadsIssue>;

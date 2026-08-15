@@ -55,11 +55,18 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bead, BeadsGraphModel } from "../types";
+import { Bead, BeadsGraphModel, DriftRefOption, DriftReport } from "../types";
 import { GRAPHIC_TOKENS, readinessHue, typeHue } from "../theme/tokens";
 import { icons } from "../icons";
 import { GraphToolbar } from "../common/GraphToolbar";
+import { DriftChoice } from "../common/DriftPicker";
 import { BeadFilterBar } from "../common/BeadFilterBar";
+import {
+  DRIFT_DESCRIPTIONS,
+  DRIFT_KINDS,
+  DRIFT_LABELS,
+  summarizeDrift,
+} from "../../graph/drift";
 import {
   BeadFilters,
   beadMatchesFilters,
@@ -120,6 +127,16 @@ export interface GraphCanvasProps {
    * and repeated invocations are not swallowed.
    */
   focusFindToken?: number;
+  /**
+   * The running plan-drift comparison. Annotates every lens and anchors the
+   * drift lens; null means no comparison point is set.
+   */
+  drift?: DriftReport | null;
+  driftPending?: boolean;
+  driftError?: string | null;
+  driftRefs?: DriftRefOption[];
+  onDriftRefChange?: (choice: DriftChoice) => void;
+  onRequestDriftRefs?: () => void;
   className?: string;
 }
 
@@ -131,6 +148,12 @@ const NODE_HEIGHT = 52;
 /** Rolled nodes carry a third line: how many of their members have closed. */
 const PROGRESS_NODE_HEIGHT = 68;
 const ICON_SIZE = 13;
+/**
+ * Room reserved on the title line for a drift badge, in the same 6.2px-per-
+ * character estimate `truncate` uses. "reprioritized" is shortened to "repriced"
+ * in DRIFT_LABELS precisely so this stays inside one node width.
+ */
+const DRIFT_BADGE_WIDTH = 62;
 const RAIL_WIDTH = 4;
 const CORNER = 4;
 
@@ -158,6 +181,9 @@ interface ViewBox {
 
 const NO_POSITIONS = new Map<string, GraphLayoutPosition>();
 
+/** Legend order, fixed so the key does not re-sort as a project's drift changes. */
+const DRIFT_KIND_ORDER = DRIFT_KINDS;
+
 export function GraphCanvas({
   beads,
   graph,
@@ -167,6 +193,12 @@ export function GraphCanvas({
   selectedBeadId,
   onSelectBead,
   focusFindToken,
+  drift = null,
+  driftPending = false,
+  driftError = null,
+  driftRefs = [],
+  onDriftRefChange,
+  onRequestDriftRefs,
   className,
 }: GraphCanvasProps): React.ReactElement {
   // Chosen from the data rather than fixed, so a project whose every edge sits
@@ -234,9 +266,12 @@ export function GraphCanvas({
   // The requested lens is evaluated first so the density decision has a real
   // node count to judge. Only the lens that survives that decision is laid out,
   // so a 500-node request never pays for a dagre pass nobody can read.
+  const driftKinds = drift?.kinds;
+
   const view = useMemo(() => {
     if (!graph) return null;
-    const requested = applyLens(graph, visibleBeads, { lens: requestedLens, focusId: anchor, epicId });
+    const shared = { focusId: anchor, epicId, drift: driftKinds };
+    const requested = applyLens(graph, visibleBeads, { lens: requestedLens, ...shared });
     const density = resolveDensity({
       requested: requestedLens,
       nodeCount: requested.nodes.length,
@@ -247,9 +282,15 @@ export function GraphCanvas({
     const result =
       density.lens === requestedLens
         ? requested
-        : applyLens(graph, visibleBeads, { lens: density.lens, focusId: anchor, epicId });
+        : applyLens(graph, visibleBeads, { lens: density.lens, ...shared });
 
     // The epic's card carries its progress line, so it needs the taller body.
+    //
+    // Drift deliberately does not appear here. Sizing a node by whether it
+    // changed would feed the comparison point into dagre, and turning the
+    // comparison on or off would then re-flow an epic somebody is reading -
+    // exactly the churn graph-stability.test.ts exists to prevent. The drift
+    // badge is drawn inside the body the node already had.
     const sized = result.nodes.map((node) => ({
       id: node.id,
       width: NODE_WIDTH,
@@ -261,7 +302,7 @@ export function GraphCanvas({
       { direction: "LR" }
     );
     return { result, density, sized, laidOut };
-  }, [graph, visibleBeads, requestedLens, anchor, epicId, densityOverride, epics]);
+  }, [graph, visibleBeads, requestedLens, anchor, epicId, densityOverride, epics, driftKinds]);
 
   const nodes = view?.result.nodes ?? [];
   const edges = view?.result.edges ?? [];
@@ -541,7 +582,12 @@ export function GraphCanvas({
           : node.id === goalId
             ? " The goal this epic's work converges on."
             : "";
-      return `${node.id}, ${node.label}. ${blockers}, ${blocked}.${goal}`;
+      // The drift badge is an SVG <text> inside a role="img"; without this the
+      // keyboard cursor would land on a changed bead and say nothing about it.
+      const changed = node.drift
+        ? ` ${DRIFT_LABELS[node.drift]}: ${DRIFT_DESCRIPTIONS[node.drift]}`
+        : "";
+      return `${node.id}, ${node.label}. ${blockers}, ${blocked}.${goal}${changed}`;
     },
     [nodes, edges, goalId]
   );
@@ -638,10 +684,17 @@ export function GraphCanvas({
 
   const edgeByPair = new Map(edges.map((edge) => [`${edge.blocker}\t${edge.blocked}`, edge]));
 
+  // The comparison belongs in the label, not only in the notice: the canvas is
+  // one role="img", so whatever the label omits is not read at all.
+  const driftedCount = nodes.filter((node) => node.drift).length;
   const label = `Dependency graph, ${LENS_LABELS[drawnLens].toLowerCase()} lens: ${
     nodes.length
   } ${nodes.length === 1 ? "bead" : "beads"}, ${edges.length} blocking ${
     edges.length === 1 ? "link" : "links"
+  }${
+    drift
+      ? `, ${driftedCount} changed since ${drift.fromLabel.toLowerCase()}`
+      : ""
   }`;
 
   const fitTarget = cursorId ?? (selectedBeadId && drawn.has(selectedBeadId) ? selectedBeadId : null);
@@ -658,6 +711,11 @@ export function GraphCanvas({
         showCompleted={showCompleted}
         onShowCompletedChange={setShowCompleted}
         hiddenEpicCount={hiddenEpics}
+        drift={drift}
+        driftPending={driftPending}
+        driftRefs={driftRefs}
+        onDriftRefChange={(choice) => onDriftRefChange?.(choice)}
+        onRequestDriftRefs={() => onRequestDriftRefs?.()}
         query={query}
         onQueryChange={setQuery}
         onQueryKeyDown={onFindKeyDown}
@@ -681,6 +739,8 @@ export function GraphCanvas({
 
       {view && <DensityNotice view={view} onOverride={setDensityOverride} />}
 
+      <DriftNotice drift={drift} error={driftError} nodes={nodes} />
+
       {graph && !graph.complete && (
         <p className="graph-canvas-degraded" role="status">
           Some beads could not be loaded, so this graph may be missing links.
@@ -693,6 +753,7 @@ export function GraphCanvas({
           nodeCount={nodes.length}
           anchored={Boolean(anchor)}
           hasEpics={epics.length > 0}
+          drift={drift}
         />
       ) : (
         <svg
@@ -913,6 +974,73 @@ function DensityNotice({
   return null;
 }
 
+/**
+ * What the comparison found, above the picture.
+ *
+ * Three things live here that cannot live on the canvas. The counts, because a
+ * badge per node does not add up to "nine closed, two rescoped" without the
+ * reader doing the counting. The deleted beads, because they have no node -
+ * they are gone from the project, and drawing them would put work on the graph
+ * that the graph does not contain. And the legend, restricted to the kinds
+ * actually on screen, because a fixed seven-item key is furniture.
+ */
+function DriftNotice({
+  drift,
+  error,
+  nodes,
+}: {
+  drift: DriftReport | null;
+  error: string | null;
+  nodes: LensNode[];
+}): React.ReactElement | null {
+  const shownKinds = useMemo(() => {
+    const seen = new Set<string>();
+    for (const node of nodes) if (node.drift) seen.add(node.drift);
+    return DRIFT_KIND_ORDER.filter((kind) => seen.has(kind));
+  }, [nodes]);
+
+  if (error) {
+    return (
+      <p className="graph-canvas-drift-notice error" role="status">
+        Could not read the plan’s history: {error}
+      </p>
+    );
+  }
+
+  if (!drift) return null;
+
+  return (
+    <p className="graph-canvas-drift-notice" role="status">
+      <span className="graph-canvas-drift-since">Since {drift.fromLabel.toLowerCase()}:</span>{" "}
+      {summarizeDrift(drift)}
+      {drift.removed.length > 0 && (
+        <>
+          {" · "}
+          <span
+            className="graph-canvas-drift-removed"
+            title={drift.removed.map((bead) => bead.id).join(", ")}
+          >
+            {drift.removed.length} deleted, not drawn
+          </span>
+        </>
+      )}
+      {shownKinds.length > 0 && (
+        <span className="graph-canvas-drift-legend">
+          {shownKinds.map((kind) => (
+            <span
+              key={kind}
+              className={`graph-canvas-drift-key ${kind}`}
+              title={DRIFT_DESCRIPTIONS[kind]}
+            >
+              {DRIFT_LABELS[kind]}
+            </span>
+          ))}
+        </span>
+      )}
+    </p>
+  );
+}
+
 interface GraphNodeProps {
   node: LensNode;
   x: number;
@@ -953,6 +1081,7 @@ function GraphNode({
   const hue = goal ? GRAPHIC_TOKENS.accent : readinessHue(node.status, node.blocked);
   const classes = [
     "graph-canvas-node",
+    node.drift ? `drifted ${node.drift}` : "",
     selected ? "selected" : "",
     focused ? "focused" : "",
     goal ? "goal" : "",
@@ -1034,8 +1163,27 @@ function GraphNode({
       )}
 
       <text className="graph-canvas-node-title" x={14} y={height / 2 + 8}>
-        {truncate(node.label, width - 26)}
+        {truncate(node.label, width - 26 - (node.drift ? DRIFT_BADGE_WIDTH : 0))}
       </text>
+
+      {/* How this bead moved since the comparison point.
+          Drawn inside the body the node already had, on the title line's spare
+          right end, and the title is cut short to make room. Nothing here
+          changes the node's box: the height and width fed to dagre are the same
+          whether or not a comparison is running, which is what lets the
+          annotation be switched on over a graph somebody is reading without
+          the picture moving under them. The word carries the state - the
+          outline is reinforcement, never the signal on its own. */}
+      {node.drift && (
+        <text
+          className="graph-canvas-node-drift"
+          x={width - 12}
+          y={height / 2 + 8}
+          textAnchor="end"
+        >
+          {DRIFT_LABELS[node.drift]}
+        </text>
+      )}
 
       {node.progress && (
         <text className="graph-canvas-node-meta" x={14} y={height / 2 + 24}>
@@ -1044,7 +1192,11 @@ function GraphNode({
       )}
 
       {/* One text node: a <title> with element children renders as markup. */}
-      <title>{`${node.id} — ${node.label}`}</title>
+      <title>
+        {`${node.id} — ${node.label}${
+          node.drift ? `\n${DRIFT_LABELS[node.drift]}: ${DRIFT_DESCRIPTIONS[node.drift]}` : ""
+        }`}
+      </title>
     </g>
   );
 }
@@ -1087,13 +1239,60 @@ function EmptyCanvas({
   nodeCount,
   anchored,
   hasEpics,
+  drift,
 }: {
   lens: GraphLens;
   nodeCount: number;
   anchored: boolean;
   /** Whether the project has any epic the epic lens could draw. */
   hasEpics: boolean;
+  /** The running comparison, when the drift lens has one. */
+  drift: DriftReport | null;
 }): React.ReactElement {
+  if (lens === "drift") {
+    if (!drift) {
+      return (
+        <div className="graph-canvas-empty">
+          <p>Pick a point in history to compare against.</p>
+          <p className="graph-canvas-empty-hint">
+            Use the <strong>Compare against…</strong> dropdown above &mdash; since yesterday, last
+            week, or one exact commit. The graph then marks what has been added, closed, reopened,
+            rescoped or reprioritized since then.
+          </p>
+        </div>
+      );
+    }
+    // Beads changed, but none of them is sequenced against anything - so there
+    // is no picture to draw, only a list. Say which, rather than claiming
+    // nothing moved.
+    if (nodeCount > 0) {
+      return (
+        <div className="graph-canvas-empty">
+          <p>
+            {nodeCount} {nodeCount === 1 ? "bead" : "beads"} changed since{" "}
+            {drift.fromLabel.toLowerCase()}, and none of them blocks or waits on another.
+          </p>
+          <p className="graph-canvas-empty-hint">
+            They are named in the list below. The graph draws changes in their blocking context,
+            and there is no context here to draw.
+          </p>
+        </div>
+      );
+    }
+    return (
+      <div className="graph-canvas-empty">
+        <p>Nothing changed since {drift.fromLabel.toLowerCase()}.</p>
+        <p className="graph-canvas-empty-hint">
+          {drift.removed.length > 0
+            ? `${drift.removed.length} bead${
+                drift.removed.length === 1 ? " was" : "s were"
+              } deleted, which the graph cannot draw. Try a comparison point further back.`
+            : "Try a comparison point further back."}
+        </p>
+      </div>
+    );
+  }
+
   if (lens === "blast-radius") {
     if (!anchored) {
       return (

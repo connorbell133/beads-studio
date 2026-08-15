@@ -12,6 +12,8 @@ import {
   BeadsProject,
   BeadsSummary,
   COORDINATION_TYPES,
+  DriftRefOption,
+  DriftReport,
   ExtensionMessage,
   WebviewSettings,
   vscode,
@@ -42,6 +44,14 @@ interface AppState {
   pulseEvents: { id: string; at: number }[];
   summary: BeadsSummary | null;
   graph: BeadsGraphModel | null;
+  /** The running plan-drift comparison, when the graph has one set. */
+  drift: DriftReport | null;
+  /** A drift read is in flight; the picker was just used. */
+  driftPending: boolean;
+  /** Why the last drift read failed. Shown in place of the annotation, never as a toast. */
+  driftError: string | null;
+  /** Commits the drift picker can offer, newest first. */
+  driftRefs: DriftRefOption[];
   loading: boolean;
   error: string | null;
   settings: WebviewSettings;
@@ -61,6 +71,10 @@ const initialState: AppState = {
   pulseEvents: [],
   summary: null,
   graph: null,
+  drift: null,
+  driftPending: false,
+  driftError: null,
+  driftRefs: [],
   loading: true,
   error: null,
   settings: { renderMarkdown: true, userId: "", tooltipHoverDelay: 1000 },
@@ -111,6 +125,20 @@ export function App(): React.ReactElement {
         break;
       case "setGraph":
         setState((prev) => ({ ...prev, graph: message.graph }));
+        break;
+      case "setDriftRefs":
+        setState((prev) => ({ ...prev, driftRefs: message.refs }));
+        break;
+      case "setDrift":
+        setState((prev) => ({
+          ...prev,
+          // A pending message carries no report; keeping the previous one on
+          // screen while the next resolves is what stops the graph flashing
+          // back to un-annotated between two picks.
+          drift: message.pending ? prev.drift : message.drift,
+          driftPending: message.pending ?? false,
+          driftError: message.error ?? null,
+        }));
         break;
       case "focusGraphFind":
         setState((prev) => ({ ...prev, findRequests: prev.findRequests + 1 }));
@@ -239,9 +267,17 @@ export function App(): React.ReactElement {
             loading={state.loading}
             error={state.error}
             selectedBeadId={state.selectedBeadId}
+            drift={state.drift}
+            driftPending={state.driftPending}
+            driftError={state.driftError}
+            driftRefs={state.driftRefs}
             onSelectBead={(beadId) =>
               vscode.postMessage({ type: "openBeadDetails", beadId })
             }
+            onDriftRefChange={(choice) =>
+              vscode.postMessage({ type: "setDriftRef", ...choice })
+            }
+            onRequestDriftRefs={() => vscode.postMessage({ type: "requestDriftRefs" })}
             onRetry={() => vscode.postMessage({ type: "refresh" })}
             onRefresh={() => vscode.postMessage({ type: "refresh" })}
           />

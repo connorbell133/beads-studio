@@ -1,8 +1,8 @@
 /**
- * The three lenses on the dependency graph, as one pure filter.
+ * The four lenses on the dependency graph, as one pure filter.
  *
  * A lens narrows the derived model to the node and edge set a view should draw,
- * before layout. All three share one render path, so the canvas has no idea
+ * before layout. All four share one render path, so the canvas has no idea
  * which lens it is drawing - it just gets fewer or more nodes.
  *
  *   epic          One epic, opened up: the epic and every descendant, with each
@@ -17,8 +17,13 @@
  *   full          Every visible bead, every blocking edge between two of them.
  *   blast-radius  The transitive closure of blockage around one bead, upstream
  *                 and downstream. Answers "what does this touch".
+ *   drift         What moved since a prior Dolt commit: the beads that changed,
+ *                 plus one hop of blocking context so a change is read against
+ *                 the work around it rather than as loose confetti. Answers
+ *                 "what did the swarm do overnight". Anchored by a commit
+ *                 picked in the toolbar (src/graph/drift.ts).
  *
- * Rules that hold across all three:
+ * Rules that hold across all four:
  *
  *   Only blocking edges are drawn. parent-child is structure, not sequencing,
  *   and drawing containment alongside blockage is what makes a dependency graph
@@ -42,12 +47,13 @@
  * Pure and deterministic: same input, same node order, same edge order.
  */
 
+import type { DriftKind } from "./drift";
 import { BeadsGraphModel, COORDINATION_TYPES } from "./types";
 
 /** Edge keys join two ids; no bd id contains a tab. */
 const EDGE_KEY_SEP = "\t";
 
-export const GRAPH_LENSES = ["epic", "full", "blast-radius"] as const;
+export const GRAPH_LENSES = ["epic", "full", "blast-radius", "drift"] as const;
 
 export type GraphLens = (typeof GRAPH_LENSES)[number];
 
@@ -58,6 +64,7 @@ export const LENS_LABELS: Record<GraphLens, string> = {
   epic: "Epics",
   full: "All beads",
   "blast-radius": "Blast radius",
+  drift: "Plan drift",
 };
 
 /**
@@ -70,6 +77,8 @@ export const LENS_DESCRIPTIONS: Record<GraphLens, string> = {
   full: "Every bead, every blocking link.",
   "blast-radius":
     "The chain through one bead: everything it blocks and everything blocking it, however many links away.",
+  drift:
+    "What moved since a point in the past: beads added, closed, reopened, rescoped or reprioritized, with one hop of context. Pick the comparison point from the dropdown.",
 };
 
 /** The subset of a bead a lens reads. Satisfied by `Bead`. */
@@ -112,6 +121,19 @@ export interface LensNode {
    * (a blocker), positive downstream (something this blocks), 0 for the focus.
    */
   distance?: number;
+  /**
+   * How this bead changed since the drift comparison point, when one is set.
+   *
+   * Stamped on EVERY lens, not only the drift lens: a comparison point is a
+   * reading of the same graph, so an epic being worked through can wear its
+   * overnight changes without leaving the epic lens. Absent means the bead did
+   * not change, or that no comparison point is set at all.
+   *
+   * Decoration only. It is deliberately not an input to node order, node size,
+   * or the edge set, because all three feed dagre - see the note on
+   * `layoutRank`, and src/graph/__tests__/graph-stability.test.ts.
+   */
+  drift?: DriftKind;
 }
 
 /** A blocking relationship between two lens nodes: `blocker` gates `blocked`. */
@@ -175,6 +197,15 @@ export interface LensOptions {
   hiddenTypes?: readonly string[];
   /** Hop limit for `blast-radius`. Unlimited by default. */
   depth?: number;
+  /**
+   * What changed since the comparison point, keyed by bead id
+   * (`DriftReport.kinds`). Anchors the `drift` lens, and annotates the nodes of
+   * every other lens. Absent or empty means no comparison is running.
+   *
+   * A plain record rather than a Map: this arrives from the webview side of a
+   * postMessage boundary, where a Map deserializes to an empty object.
+   */
+  drift?: Record<string, DriftKind>;
 }
 
 /** One entry in the epic picker: an epic and how far along its subtree is. */
@@ -305,10 +336,57 @@ export function applyLens(
       return epicDetail(model, context, options, total);
     case "blast-radius":
       return blastRadius(model, context, options, total);
+    case "drift":
+      return driftLens(model, context, options, total);
     case "full":
     default:
-      return finish(model, context, "full", context.ids, undefined, total);
+      return finish(model, context, "full", context.ids, undefined, total, options.drift);
   }
+}
+
+/**
+ * The beads that moved since the comparison point, in context.
+ *
+ * The drifted set alone would be a scatter of unrelated cards - "seven things
+ * changed" without the one fact that makes it a plan: what those seven were
+ * sequenced against. So the node set is the drifted beads plus one blocking hop
+ * either side, which is the smallest addition that lets a new bead be read as
+ * "filed in front of the thing it now blocks" rather than as a loose square.
+ *
+ * One hop, not the transitive closure: that is the blast-radius lens's job, and
+ * on a busy week the closure of every changed bead is the full graph again.
+ *
+ * Deleted beads are not here. They have no node in the current model to
+ * annotate, and drawing one would put a bead on the canvas that the project
+ * does not contain; the report carries them as text instead.
+ */
+function driftLens(
+  model: BeadsGraphModel,
+  context: Context,
+  options: LensOptions,
+  total: number
+): LensResult {
+  const drift = options.drift ?? {};
+  const changed = context.ids.filter((id) => drift[id] !== undefined);
+  if (changed.length === 0) {
+    return { lens: "drift", nodes: [], edges: [], omitted: total };
+  }
+
+  const shown = new Set(changed);
+  for (const id of changed) {
+    for (const blocker of context.blockedBy.get(id) ?? []) shown.add(blocker);
+    for (const blocked of context.blocks.get(id) ?? []) shown.add(blocked);
+  }
+
+  return finish(
+    model,
+    context,
+    "drift",
+    context.ids.filter((id) => shown.has(id)),
+    undefined,
+    total,
+    drift
+  );
 }
 
 /**
@@ -386,7 +464,15 @@ function epicDetail(
   }
 
   const members = descendantsOf(model, context, epicId);
-  const result = finish(model, context, "epic", [epicId, ...members], undefined, total);
+  const result = finish(
+    model,
+    context,
+    "epic",
+    [epicId, ...members],
+    undefined,
+    total,
+    options.drift
+  );
 
   // The epic's own card carries the progress line, so the lens answers "how far
   // along" without a separate header.
@@ -443,7 +529,15 @@ function blastRadius(
   walk(context.blocks, 1); // downstream: what waits on this
 
   const ids = context.ids.filter((id) => distance.has(id));
-  return finish(model, context, "blast-radius", ids, { distance, focusId }, total);
+  return finish(
+    model,
+    context,
+    "blast-radius",
+    ids,
+    { distance, focusId },
+    total,
+    options.drift
+  );
 }
 
 interface Radius {
@@ -452,12 +546,17 @@ interface Radius {
 }
 
 /**
- * Node and edge assembly, shared by all three lenses.
+ * Node and edge assembly, shared by all four lenses.
  *
  * Ordering is fixed here rather than at each call site: nodes shallowest-first
  * then by id, edges by endpoint. Determinism matters because dagre's output
  * depends on insertion order - an unstable sort would move the whole picture
  * between two renders of identical data.
+ *
+ * `drift` is stamped last and read by nothing else in this function. That is
+ * the whole reason a comparison point can be turned on over an epic somebody is
+ * watching without the epic moving: it changes no id, no order, no edge, and no
+ * size input, so dagre receives byte-identical input either way.
  */
 function finish(
   model: BeadsGraphModel,
@@ -465,7 +564,8 @@ function finish(
   lens: GraphLens,
   ids: string[],
   radius: Radius | undefined,
-  total: number
+  total: number,
+  drift?: Record<string, DriftKind>
 ): LensResult {
   const shown = new Set(ids);
 
@@ -488,6 +588,8 @@ function finish(
     };
 
     if (radius) node.distance = radius.distance.get(id);
+    const changed = drift?.[id];
+    if (changed) node.drift = changed;
 
     return node;
   });
@@ -516,7 +618,10 @@ function finish(
   // "what does this reach", and a containment link is not part of the answer.
   // The epic lens reverses the tether (member -> container) so layout converges
   // the subtree on the epic; see `epicDetail`.
-  if (lens === "full" || lens === "epic") {
+  // Drift joins the tether-drawing lenses because a changed epic drawn beside
+  // its changed member is a container holding work, and the untethered pair
+  // would read as two unrelated changes.
+  if (lens === "full" || lens === "epic" || lens === "drift") {
     for (const id of context.ids) {
       const parent = model.nodes[id]?.parent;
       if (!parent || !shown.has(parent) || !shown.has(id)) continue;

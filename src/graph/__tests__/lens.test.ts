@@ -725,3 +725,83 @@ describe("visibleEpics", () => {
     expect(hiddenEpicCount([epic("live1", false)], null)).toBe(0);
   });
 });
+
+describe("the drift lens", () => {
+  // Four beads under one epic: t1 -> t2 -> t3 in a chain, t4 off on its own.
+  const nodes = [
+    raw("e1", { issue_type: "epic" }),
+    raw("t1", { parent: "e1" }),
+    raw("t2", { parent: "e1" }),
+    raw("t3", { parent: "e1" }),
+    raw("t4", { parent: "e1" }),
+  ];
+  const edges = [blocks("t2", "t1"), blocks("t3", "t2")];
+  const { model, beads } = build(nodes, edges);
+
+  it("draws the changed beads plus one hop of blocking context", () => {
+    // Only t2 moved. t1 and t3 come along because they are what t2 is sequenced
+    // against - a lone card says a bead changed, not what it changed relative
+    // to. t4 is unrelated and stays out.
+    const result = applyLens(model, beads, { lens: "drift", drift: { t2: "closed" } });
+
+    expect(ids(result)).toEqual(["t1", "t2", "t3"]);
+    expect(pairs(result)).toContain("t1->t2");
+    expect(pairs(result)).toContain("t2->t3");
+  });
+
+  it("does not chase the chain past one hop", () => {
+    // t3's blocker's blocker is t1; the whole chain is blast radius's job.
+    const result = applyLens(model, beads, { lens: "drift", drift: { t3: "added" } });
+
+    expect(ids(result)).toEqual(["t2", "t3"]);
+  });
+
+  it("marks only the beads that changed, never the context around them", () => {
+    const result = applyLens(model, beads, { lens: "drift", drift: { t2: "closed" } });
+    const drifts = Object.fromEntries(result.nodes.map((node) => [node.id, node.drift]));
+
+    expect(drifts).toEqual({ t1: undefined, t2: "closed", t3: undefined });
+  });
+
+  it("draws nothing without a comparison point, and counts everything as omitted", () => {
+    const result = applyLens(model, beads, { lens: "drift" });
+
+    expect(result.nodes).toEqual([]);
+    expect(result.omitted).toBe(5);
+  });
+
+  it("ignores a drifted bead the graph no longer holds", () => {
+    // A deleted bead has no node to annotate. Naming one must not conjure it.
+    const result = applyLens(model, beads, {
+      lens: "drift",
+      drift: { t2: "closed", "gone-forever": "removed" },
+    });
+
+    expect(ids(result)).toEqual(["t1", "t2", "t3"]);
+  });
+});
+
+describe("drift as an annotation on the other lenses", () => {
+  const nodes = [
+    raw("e1", { issue_type: "epic" }),
+    raw("t1", { parent: "e1" }),
+    raw("t2", { parent: "e1" }),
+  ];
+  const { model, beads } = build(nodes, [blocks("t2", "t1")]);
+  const drift = { t2: "rescoped" as const };
+
+  // A comparison point is a reading of the same graph, so it has to be legible
+  // without leaving the lens you are already on.
+  it.each(["epic", "full", "blast-radius"] as const)("stamps drift on the %s lens", (lens) => {
+    const result = applyLens(model, beads, { lens, epicId: "e1", focusId: "t1", drift });
+
+    expect(result.nodes.find((node) => node.id === "t2")?.drift).toBe("rescoped");
+    expect(result.nodes.find((node) => node.id === "t1")?.drift).toBeUndefined();
+  });
+
+  it("leaves every node unmarked when no comparison is running", () => {
+    const result = applyLens(model, beads, { lens: "full" });
+
+    expect(result.nodes.every((node) => node.drift === undefined)).toBe(true);
+  });
+});

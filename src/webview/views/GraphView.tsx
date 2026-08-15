@@ -11,7 +11,8 @@
  */
 
 import React, { useMemo } from "react";
-import { Bead, BeadsGraphModel } from "../types";
+import { Bead, BeadsGraphModel, DriftRefOption, DriftReport } from "../types";
+import type { DriftChoice } from "../common/DriftPicker";
 import { PriorityIcon } from "../common/PriorityIcon";
 import { StatusRing } from "../common/StatusRing";
 import { TypeIcon } from "../common/TypeIcon";
@@ -20,6 +21,7 @@ import { ErrorMessage } from "../common/ErrorMessage";
 import { useRovingFocus } from "../hooks/useRovingFocus";
 import { GraphCanvas } from "./GraphCanvas";
 import { countBlockingLinks } from "../../graph/summary";
+import { DRIFT_DESCRIPTIONS, DRIFT_LABELS } from "../../graph/drift";
 import { LeverageBadge } from "../common/LeverageBadge";
 import { RefreshButton } from "../common/RefreshButton";
 
@@ -35,7 +37,14 @@ interface GraphViewProps {
   selectedBeadId: string | null;
   /** Bumped by the beads.findInGraph command; any change focuses find. */
   focusFindToken?: number;
+  /** The running plan-drift comparison; see src/graph/drift.ts. */
+  drift?: DriftReport | null;
+  driftPending?: boolean;
+  driftError?: string | null;
+  driftRefs?: DriftRefOption[];
   onSelectBead: (beadId: string) => void;
+  onDriftRefChange?: (choice: DriftChoice) => void;
+  onRequestDriftRefs?: () => void;
   onRetry: () => void;
   /** Re-reads the graph now, ahead of the panel's own poll. */
   onRefresh: () => void;
@@ -48,7 +57,13 @@ export function GraphView({
   error,
   selectedBeadId,
   focusFindToken,
+  drift = null,
+  driftPending = false,
+  driftError = null,
+  driftRefs = [],
   onSelectBead,
+  onDriftRefChange,
+  onRequestDriftRefs,
   onRetry,
   onRefresh,
 }: GraphViewProps): React.ReactElement {
@@ -154,6 +169,12 @@ export function GraphView({
         focusId={selectedBeadId}
         selectedBeadId={selectedBeadId}
         focusFindToken={focusFindToken}
+        drift={drift}
+        driftPending={driftPending}
+        driftError={driftError}
+        driftRefs={driftRefs}
+        onDriftRefChange={onDriftRefChange}
+        onRequestDriftRefs={onRequestDriftRefs}
         onSelectBead={onSelectBead}
       />
 
@@ -204,6 +225,18 @@ export function GraphView({
                 <StatusRing status={bead.status} />
                 <TypeIcon type={bead.type ?? ""} size={14} />
                 <span className="graph-row-title">{bead.title}</span>
+                {/* The canvas is one role="img"; this list is how the graph is
+                    read without sight of it, so a drift annotation that existed
+                    only as an SVG <text> would be invisible to exactly the
+                    users who most need it spelled out. */}
+                {drift?.kinds[node.id] && (
+                  <span
+                    className={`graph-chip drift ${drift.kinds[node.id]}`}
+                    title={DRIFT_DESCRIPTIONS[drift.kinds[node.id]]}
+                  >
+                    {DRIFT_LABELS[drift.kinds[node.id]]}
+                  </span>
+                )}
                 {node.ready && <span className="graph-chip ready">ready</span>}
                 <LeverageBadge leverage={node.leverage} />
               </button>

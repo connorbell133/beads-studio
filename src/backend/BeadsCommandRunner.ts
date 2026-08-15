@@ -13,10 +13,35 @@ import {
   MIN_SUPPORTED_BD_VERSION,
   UpdateIssueArgs,
 } from "./BeadsBackend";
+import {
+  DriftCommit,
+  mergeCommits,
+  parseDiffEntries,
+  RawDiffEntry,
+} from "../graph/drift";
 import { edgesFromIssues } from "./types";
 
 const execFileAsync = util.promisify(execFile);
 const BD_COMMAND_TIMEOUT_MS = 30000;
+
+/**
+ * How many recently-touched beads to read history from when assembling a
+ * commit listing, how deep to read each, and how many commits to hand back.
+ *
+ * Twelve beads at sixty commits each covers weeks of swarm activity on a real
+ * project while costing twelve `bd history` spawns, which is why the result is
+ * cached rather than read per keystroke.
+ */
+const DRIFT_COMMIT_SAMPLE_BEADS = 12;
+const DRIFT_HISTORY_DEPTH = 60;
+const DRIFT_COMMIT_LIMIT = 40;
+
+/**
+ * History is immutable once written, so a drift read can be cached far longer
+ * than a list read. Thirty seconds keeps a poll from re-spawning twelve
+ * processes while still picking up new commits within one refresh cycle.
+ */
+const DRIFT_CACHE_TTL_MS = 30000;
 
 function compareSemver(a: string, b: string): number {
   const aParts = a.split(".").map((n) => parseInt(n, 10));
@@ -34,6 +59,25 @@ function detectSemver(text: string): string | undefined {
   const match = text.match(/(\d+)\.(\d+)\.(\d+)/);
   if (!match) return undefined;
   return `${match[1]}.${match[2]}.${match[3]}`;
+}
+
+/**
+ * bd's own sentence, out of the JSON envelope it failed inside.
+ *
+ * Returns the input untouched when it is not that envelope, so a plain error
+ * message survives unchanged.
+ */
+export function unwrapBdError(message: string): string {
+  const trimmed = message.trim();
+  const start = trimmed.indexOf("{");
+  if (start < 0) return message;
+  try {
+    const parsed: unknown = JSON.parse(trimmed.slice(start));
+    const error = (parsed as { error?: unknown })?.error;
+    return typeof error === "string" && error.length > 0 ? error : message;
+  } catch {
+    return message;
+  }
 }
 
 function toStringArray(values?: string[]): string[] {
@@ -161,6 +205,82 @@ export class BeadsCommandRunner implements BeadsBackend {
     });
     const nodes = Array.isArray(result) ? (result as BeadsIssue[]) : [];
     return { nodes, edges: edgesFromIssues(nodes), complete: capabilities.includeHidden };
+  }
+
+  async diffRefs(fromRef: string, toRef = "HEAD"): Promise<RawDiffEntry[]> {
+    try {
+      const result = await this.runReadJson(["diff", fromRef, toRef, "--json"], {
+        cacheTtlMs: DRIFT_CACHE_TTL_MS,
+      });
+      return parseDiffEntries(result);
+    } catch (error) {
+      // An unresolvable ref exits 1 with its JSON error object on stdout and
+      // nothing on stderr, so the generic runner surfaces the whole blob.
+      // Unwrapping it here is the difference between the graph saying
+      // `{"error":"...","schema_version":1}` and saying what went wrong.
+      throw new Error(unwrapBdError(error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  /**
+   * Recent commits, assembled from per-bead histories.
+   *
+   * bd 1.2.1 exposes no project-wide commit log to a client: `bd sql` is
+   * refused outright in embedded mode, and `bd vc` offers status/commit/merge
+   * but no log. `bd history <id>` is the only commit listing there is, and it
+   * takes exactly one id. So this samples: take the beads touched most recently,
+   * read each one's history, and union the commits.
+   *
+   * The result is therefore a partial log - a commit that touched none of the
+   * sampled beads will be missing. That is survivable because of how the caller
+   * uses it (see `resolveDriftRef`): picking a slightly older commit than the
+   * true head-at-cutoff widens the comparison window rather than narrowing it,
+   * and every commit offered is real and carries its own timestamp, so the
+   * window the user is shown is the window actually drawn.
+   *
+   * Bounded on purpose. Each `bd history` is its own process, so the sample
+   * size is the cost: `DRIFT_COMMIT_SAMPLE_BEADS` spawns per call, memoized for
+   * `DRIFT_CACHE_TTL_MS`.
+   */
+  async recentCommits(limit = DRIFT_COMMIT_LIMIT): Promise<DriftCommit[]> {
+    const beads = await this.list();
+    const sample = [...beads]
+      .sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""))
+      .slice(0, DRIFT_COMMIT_SAMPLE_BEADS);
+
+    const listings = await Promise.all(
+      sample.map(async (bead) => {
+        try {
+          return await this.beadCommits(bead.id);
+        } catch (error) {
+          // One unreadable bead - compacted, renamed, deleted mid-read - must
+          // not empty the picker. The union of the rest is still usable.
+          this.log.debug(
+            `No history for ${bead.id}: ${error instanceof Error ? error.message : String(error)}`
+          );
+          return [];
+        }
+      })
+    );
+
+    return mergeCommits(listings).slice(0, limit);
+  }
+
+  private async beadCommits(id: string): Promise<DriftCommit[]> {
+    const result = await this.runReadJson(
+      ["history", id, "--limit", String(DRIFT_HISTORY_DEPTH), "--json"],
+      { cacheTtlMs: DRIFT_CACHE_TTL_MS }
+    );
+    if (!Array.isArray(result)) return [];
+
+    return result.flatMap((row): DriftCommit[] => {
+      if (!row || typeof row !== "object") return [];
+      const entry = row as { CommitHash?: unknown; CommitDate?: unknown };
+      const hash = typeof entry.CommitHash === "string" ? entry.CommitHash : "";
+      const at = typeof entry.CommitDate === "string" ? entry.CommitDate : "";
+      if (!hash || !at || !Number.isFinite(Date.parse(at))) return [];
+      return [{ hash, at }];
+    });
   }
 
   private async getListCapabilities(): Promise<ListCapabilities> {
