@@ -12,6 +12,7 @@ import React, { useMemo } from "react";
 import { ExpandedState } from "@tanstack/react-table";
 import {
   Bead,
+  BeadWriteExpectation,
   BeadPriority,
   BeadStatus,
   BeadsGraphModel,
@@ -58,7 +59,7 @@ interface LinearListProps {
   forceOpen: boolean;
   emptyText: string;
   onSelectBead: (id: string) => void;
-  onUpdateBead: (id: string, updates: Partial<Bead>) => void;
+  onUpdateBead: (id: string, updates: Partial<Bead>, expect?: BeadWriteExpectation) => void;
   onCopyId: (id: string) => void;
   onRowMouseEnter: (e: React.MouseEvent<HTMLElement>, id: string) => void;
   onRowMouseLeave: () => void;
@@ -334,7 +335,11 @@ export function LinearList({
         </button>
         <StatusSelect
           status={bead.status}
-          onChange={(status) => onUpdateBead(bead.id, { status })}
+          // The row is fully controlled, so the status on screen is exactly the
+          // value this write must be conditioned on.
+          onChange={(status) =>
+            onUpdateBead(bead.id, { status }, { status: bead.status })
+          }
         />
         {bead.type && <TypeIcon type={bead.type as BeadType} size={14} />}
         <span className="lin-title">{bead.title}</span>
@@ -392,7 +397,9 @@ export function LinearList({
               <span className="lin-spacer" />
               <StatusSelect
                 status={root.status}
-                onChange={(status) => onUpdateBead(root.id, { status })}
+                onChange={(status) =>
+                  onUpdateBead(root.id, { status }, { status: root.status })
+                }
               />
             </header>
             {open && rows.map(renderRow)}

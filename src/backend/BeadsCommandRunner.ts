@@ -12,6 +12,9 @@ import {
   DependencyArgs,
   MIN_SUPPORTED_BD_VERSION,
   UpdateIssueArgs,
+  UpdateOutcome,
+  WriteConflict,
+  WriteGuard,
 } from "./BeadsBackend";
 import { edgesFromIssues } from "./types";
 
@@ -98,6 +101,123 @@ export function createListCommandArgs(capabilities?: ListCapabilities): string[]
  */
 export function createShowCommandArgs(id: string): string[] {
   return ["show", id, "--json", "--include-dependents"];
+}
+
+/**
+ * bd's exit code for "every failure was a stale --if-assignee/--if-status
+ * guard". Documented in `bd update --help` and verified on bd 1.2.1: a stale
+ * guard exits 13 and writes nothing, while every other failure exits 1.
+ *
+ * The distinct code is the whole reason this is separable from a generic
+ * failure - the error text alone would need string matching to classify.
+ */
+export const GUARD_MISMATCH_EXIT_CODE = 13;
+
+/** Each precondition and the bd flag that carries it. */
+const GUARD_FLAGS: Array<[keyof WriteGuard, string]> = [
+  ["ifStatus", "--if-status"],
+  ["ifAssignee", "--if-assignee"],
+];
+
+/**
+ * Args for one `bd update`, including any preconditions.
+ *
+ * Exported for the same reason the list args are: the flag list is the part
+ * worth pinning, and building it needs no process.
+ *
+ * Guards are appended only when the call actually writes a field. bd rejects
+ * `--if-status` on a field-less update ("Requires a field update"), so sending
+ * one on a no-op would turn a harmless call into a hard error.
+ */
+export function createUpdateCommandArgs(args: UpdateIssueArgs): string[] {
+  const cmdArgs = ["update", args.id, "--json"];
+
+  if (args.title !== undefined) cmdArgs.push("--title", args.title);
+  if (args.description !== undefined) cmdArgs.push("--description", args.description);
+  if (args.design !== undefined) cmdArgs.push("--design", args.design);
+  if (args.acceptance_criteria !== undefined) {
+    cmdArgs.push("--acceptance", args.acceptance_criteria);
+  }
+  if (args.notes !== undefined) cmdArgs.push("--notes", args.notes);
+  if (args.status !== undefined) cmdArgs.push("--status", args.status);
+  if (args.priority !== undefined) cmdArgs.push("--priority", String(args.priority));
+  if (args.assignee !== undefined) cmdArgs.push("--assignee", args.assignee);
+  if (args.external_ref !== undefined) cmdArgs.push("--external-ref", args.external_ref);
+  if (
+    args.estimated_minutes !== undefined &&
+    args.estimate !== undefined &&
+    args.estimated_minutes !== args.estimate
+  ) {
+    throw new Error("Conflicting estimate values: estimated_minutes and estimate differ");
+  }
+  const estimate = args.estimated_minutes ?? args.estimate;
+  if (estimate !== undefined) cmdArgs.push("--estimate", String(estimate));
+  if (args.type !== undefined && args.issue_type !== undefined && args.type !== args.issue_type) {
+    throw new Error("Conflicting issue type values");
+  }
+  const issueType = args.issue_type ?? args.type;
+  if (issueType !== undefined) cmdArgs.push("--type", issueType);
+
+  for (const label of args.add_labels ?? []) cmdArgs.push("--add-label", label);
+  for (const label of args.remove_labels ?? []) cmdArgs.push("--remove-label", label);
+  for (const label of args.set_labels ?? []) cmdArgs.push("--set-labels", label);
+
+  const writesAField = cmdArgs.length > 3;
+  if (writesAField && args.guard) {
+    for (const [key, flag] of GUARD_FLAGS) {
+      const value = args.guard[key];
+      // "" is meaningful for --if-assignee (requires unassigned), so only an
+      // absent guard is skipped.
+      if (value !== undefined) cmdArgs.push(flag, value);
+    }
+  }
+
+  return cmdArgs;
+}
+
+/**
+ * Pulls the live value out of bd's guard-mismatch report.
+ *
+ * bd 1.2.1 phrases the two guards differently:
+ *   status mismatch: bd-1 has status "in_progress", expected "open"
+ *   assignee mismatch: bd-1 is held by "", expected "alice"
+ *
+ * Only `actual` needs recovering - the caller already knows what it asked for -
+ * so a phrasing change costs the notification one value, not the conflict
+ * detection, which is keyed on the exit code alone.
+ */
+export function parseGuardMismatch(
+  output: string
+): { field: "status" | "assignee"; actual?: string } | null {
+  const status = output.match(/status mismatch:.*?has status "([^"]*)"/);
+  if (status) return { field: "status", actual: status[1] };
+
+  const assignee = output.match(/assignee mismatch:.*?is held by "([^"]*)"/);
+  if (assignee) return { field: "assignee", actual: assignee[1] };
+
+  if (output.includes("status mismatch")) return { field: "status" };
+  if (output.includes("assignee mismatch")) return { field: "assignee" };
+  return null;
+}
+
+/**
+ * Internal signal that bd refused a write on a stale precondition.
+ *
+ * Thrown by the low-level runner so the classification happens once, next to
+ * the exit code, and converted to an `UpdateOutcome` by the write method. It
+ * never escapes the backend.
+ */
+class GuardMismatchError extends Error {
+  constructor(readonly detail: { field: "status" | "assignee"; actual?: string } | null) {
+    super("bd refused the write: a precondition no longer held");
+    this.name = "GuardMismatchError";
+  }
+}
+
+/** execFile reports a non-zero exit as a numeric `code`; spawn failures use a string. */
+function exitCodeOf(error: unknown): number | undefined {
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "number" ? code : undefined;
 }
 
 export class BeadsCommandRunner implements BeadsBackend {
@@ -249,45 +369,34 @@ export class BeadsCommandRunner implements BeadsBackend {
     return this.pickSingleIssue(result, "create");
   }
 
-  async update(args: UpdateIssueArgs): Promise<BeadsIssue> {
-    const cmdArgs = ["update", args.id, "--json"];
-
-    if (args.title !== undefined) cmdArgs.push("--title", args.title);
-    if (args.description !== undefined) cmdArgs.push("--description", args.description);
-    if (args.design !== undefined) cmdArgs.push("--design", args.design);
-    if (args.acceptance_criteria !== undefined) {
-      cmdArgs.push("--acceptance", args.acceptance_criteria);
+  async update(args: UpdateIssueArgs): Promise<UpdateOutcome> {
+    try {
+      const result = await this.runJson(createUpdateCommandArgs(args));
+      return { ok: true, issue: this.pickSingleIssue(result, "update") };
+    } catch (error) {
+      if (!(error instanceof GuardMismatchError)) throw error;
+      return { ok: false, conflict: this.describeConflict(args, error) };
     }
-    if (args.notes !== undefined) cmdArgs.push("--notes", args.notes);
-    if (args.status !== undefined) cmdArgs.push("--status", args.status);
-    if (args.priority !== undefined) cmdArgs.push("--priority", String(args.priority));
-    if (args.assignee !== undefined) cmdArgs.push("--assignee", args.assignee);
-    if (args.external_ref !== undefined) cmdArgs.push("--external-ref", args.external_ref);
-    if (
-      args.estimated_minutes !== undefined &&
-      args.estimate !== undefined &&
-      args.estimated_minutes !== args.estimate
-    ) {
-      throw new Error("Conflicting estimate values: estimated_minutes and estimate differ");
-    }
-    const estimate = args.estimated_minutes ?? args.estimate;
-    if (estimate !== undefined) cmdArgs.push("--estimate", String(estimate));
-    if (
-      args.type !== undefined &&
-      args.issue_type !== undefined &&
-      args.type !== args.issue_type
-    ) {
-      throw new Error("Conflicting issue type values");
-    }
-    const issueType = args.issue_type ?? args.type;
-    if (issueType !== undefined) cmdArgs.push("--type", issueType);
+  }
 
-    for (const label of args.add_labels ?? []) cmdArgs.push("--add-label", label);
-    for (const label of args.remove_labels ?? []) cmdArgs.push("--remove-label", label);
-    for (const label of args.set_labels ?? []) cmdArgs.push("--set-labels", label);
-
-    const result = await this.runJson(cmdArgs);
-    return this.pickSingleIssue(result, "update");
+  /**
+   * Names both sides of the race.
+   *
+   * `expected` comes from the guard the caller sent rather than bd's message,
+   * so it is right even when bd's phrasing changes; `actual` is whatever could
+   * be recovered from the report.
+   */
+  private describeConflict(args: UpdateIssueArgs, error: GuardMismatchError): WriteConflict {
+    // A guard can only fail on a field that was guarded, so a missing detail
+    // falls back to whichever guard was sent.
+    const field = error.detail?.field ?? (args.guard?.ifStatus !== undefined ? "status" : "assignee");
+    return {
+      id: args.id,
+      field,
+      expected: field === "status" ? args.guard?.ifStatus : args.guard?.ifAssignee,
+      actual: error.detail?.actual,
+      attempted: field === "status" ? args.status : args.assignee,
+    };
   }
 
   async close(args: CloseIssueArgs): Promise<BeadsIssue> {
@@ -369,6 +478,16 @@ export class BeadsCommandRunner implements BeadsBackend {
       const stdout = err.stdout?.trim() ?? "";
       const rawMessage = stderr || stdout || err.message;
       this.log.trace(`bd command failed: ${args.join(" ")} :: ${rawMessage}`);
+
+      // Checked before every other classifier: exit 13 is bd stating outright
+      // that nothing was written because a precondition went stale. It is the
+      // one failure that is a legitimate outcome rather than a broken command,
+      // and no string matching is needed to recognize it.
+      if (exitCodeOf(err) === GUARD_MISMATCH_EXIT_CODE) {
+        // The machine-readable report lands on stdout; the human phrasing on
+        // stderr. Either may carry the live value.
+        throw new GuardMismatchError(parseGuardMismatch(`${stdout}\n${stderr}`));
+      }
 
       if (this.isDoltConnectionError(rawMessage)) {
         if (!recoveryAttempted) {

@@ -154,7 +154,7 @@ export class BeadDetailsViewProvider extends BaseViewProvider {
       case "updateBead":
         this.log.debug(`Updating bead ${message.beadId}: ${JSON.stringify(message.updates)}`);
 
-        try {
+        {
           // Map webview field names (camelCase) to CLI/backend field names (snake_case)
           const {
             labels,
@@ -181,10 +181,12 @@ export class BeadDetailsViewProvider extends BaseViewProvider {
           if (estimatedMinutes !== undefined) {
             updateArgs.estimated_minutes = estimatedMinutes;
           }
-          await client.update(updateArgs as unknown as Parameters<typeof client.update>[0]);
-          // Data will refresh via mutation events
-        } catch (err) {
-          vscode.window.showErrorMessage(`Failed to update bead: ${err}`);
+          // Guarded on the values the panel was displaying before the edit.
+          await this.applyGuardedUpdate(
+            client,
+            updateArgs as unknown as Parameters<typeof client.update>[0],
+            message.expect
+          );
         }
         break;
 

@@ -18,6 +18,7 @@ import {
 } from "@tanstack/react-table";
 import {
   Bead,
+  BeadWriteExpectation,
   BeadsGraphModel,
   BeadStatus,
   BeadPriority,
@@ -66,8 +67,14 @@ interface IssuesViewProps {
   presetId?: string | null;
   presetRequests?: number;
   tooltipHoverDelay: number; // 0 = disabled
+  /** Bumped when a write was refused; the board drops its optimistic move. */
+  writeConflicts?: number;
   onSelectBead: (beadId: string) => void;
-  onUpdateBead: (beadId: string, updates: Partial<Bead>) => void;
+  onUpdateBead: (
+    beadId: string,
+    updates: Partial<Bead>,
+    expect?: BeadWriteExpectation
+  ) => void;
   onRetry: () => void;
 }
 
@@ -93,6 +100,7 @@ export function IssuesView({
   presetId = null,
   presetRequests = 0,
   tooltipHoverDelay,
+  writeConflicts = 0,
   onSelectBead,
   onUpdateBead,
   onRetry,
@@ -844,6 +852,7 @@ export function IssuesView({
             selectedBeadId={selectedBeadId}
             onSelectBead={onSelectBead}
             onUpdateBead={onUpdateBead}
+            writeConflicts={writeConflicts}
             hasActiveFilters={hasActiveFilters}
             unfilteredCounts={unfilteredStatusCounts}
           />

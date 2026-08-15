@@ -1,9 +1,12 @@
 import * as vscode from "vscode";
 import {
   BeadsCommandRunner,
+  GUARD_MISMATCH_EXIT_CODE,
   createListCommandArgs,
   createShowCommandArgs,
+  createUpdateCommandArgs,
   detectListCapabilities,
+  parseGuardMismatch,
 } from "../BeadsCommandRunner";
 import { MIN_SUPPORTED_BD_VERSION } from "../BeadsBackend";
 import { Logger } from "../../utils/logger";
@@ -192,5 +195,232 @@ describe("createShowCommandArgs", () => {
     // bd rejects unknown flags outright, so the floor must be >= 1.0.5.
     const [major, minor, patch] = MIN_SUPPORTED_BD_VERSION.split(".").map(Number);
     expect(major * 10000 + minor * 100 + patch).toBeGreaterThanOrEqual(10005);
+  });
+});
+
+describe("createUpdateCommandArgs", () => {
+  it("sends no preconditions when the caller supplies none", () => {
+    // The pre-guard behaviour, still reachable: an unguarded write is
+    // unconditional, exactly as it was.
+    expect(createUpdateCommandArgs({ id: "bd-1", status: "closed" })).toEqual([
+      "update",
+      "bd-1",
+      "--json",
+      "--status",
+      "closed",
+    ]);
+  });
+
+  it("conditions the write on the status the caller last saw", () => {
+    const args = createUpdateCommandArgs({
+      id: "bd-1",
+      status: "in_progress",
+      guard: { ifStatus: "open" },
+    });
+
+    expect(args).toEqual([
+      "update",
+      "bd-1",
+      "--json",
+      "--status",
+      "in_progress",
+      "--if-status",
+      "open",
+    ]);
+  });
+
+  it("guards an assignment on the previous holder", () => {
+    const args = createUpdateCommandArgs({
+      id: "bd-1",
+      assignee: "connor",
+      guard: { ifAssignee: "agent-7" },
+    });
+
+    expect(args.slice(-2)).toEqual(["--if-assignee", "agent-7"]);
+  });
+
+  it("guards a claim of an unassigned bead on it still being unassigned", () => {
+    // bd reads --if-assignee '' as "requires unassigned", so the empty string
+    // is a value to send, not an absent guard to drop.
+    const args = createUpdateCommandArgs({
+      id: "bd-1",
+      assignee: "connor",
+      guard: { ifAssignee: "" },
+    });
+
+    expect(args.slice(-2)).toEqual(["--if-assignee", ""]);
+  });
+
+  it("sends both preconditions when an edit changes both fields", () => {
+    const args = createUpdateCommandArgs({
+      id: "bd-1",
+      status: "in_progress",
+      assignee: "connor",
+      guard: { ifStatus: "open", ifAssignee: "" },
+    });
+
+    expect(args).toContain("--if-status");
+    expect(args).toContain("--if-assignee");
+  });
+
+  it("drops preconditions when the update writes no field", () => {
+    // bd rejects a guard without a field update, so attaching one to a no-op
+    // would turn a harmless call into a hard failure.
+    expect(createUpdateCommandArgs({ id: "bd-1", guard: { ifStatus: "open" } })).toEqual([
+      "update",
+      "bd-1",
+      "--json",
+    ]);
+  });
+
+  it("still rejects contradictory estimate and type aliases", () => {
+    expect(() =>
+      createUpdateCommandArgs({ id: "bd-1", estimate: 30, estimated_minutes: 60 })
+    ).toThrow(/Conflicting estimate/);
+    expect(() =>
+      createUpdateCommandArgs({ id: "bd-1", type: "bug", issue_type: "task" })
+    ).toThrow(/Conflicting issue type/);
+  });
+});
+
+describe("parseGuardMismatch", () => {
+  it("recovers the live status from bd's mismatch report", () => {
+    expect(
+      parseGuardMismatch(
+        'Error updating bd-1: status mismatch: bd-1 has status "in_progress", expected "open"'
+      )
+    ).toEqual({ field: "status", actual: "in_progress" });
+  });
+
+  it("recovers an empty assignee as the unassigned value it is", () => {
+    expect(
+      parseGuardMismatch('assignee mismatch: bd-1 is held by "", expected "alice"')
+    ).toEqual({ field: "assignee", actual: "" });
+  });
+
+  it("still names the field when the phrasing no longer parses", () => {
+    // A bd rewording costs the notification one value, never the detection.
+    expect(parseGuardMismatch("status mismatch happened")).toEqual({ field: "status" });
+  });
+
+  it("reports nothing for output that is not a guard mismatch", () => {
+    expect(parseGuardMismatch("some other failure")).toBeNull();
+  });
+});
+
+/** Reproduces what execFile throws for a bd process that exited non-zero. */
+function exitWith(code: number, stdout: string, stderr: string): Error {
+  return Object.assign(new Error(`Command failed with exit code ${code}`), {
+    code,
+    stdout,
+    stderr,
+  });
+}
+
+// Verified against bd 1.2.1: a stale guard prints the machine-readable report
+// on stdout, the human message on stderr, and exits 13.
+const GUARD_MISMATCH_STDOUT = JSON.stringify({
+  error: "1 of 1 issues failed to update",
+  failed: [
+    {
+      id: "bd-1",
+      error: 'updating issue: status mismatch: bd-1 has status "in_progress", expected "open"',
+      guard_mismatch: true,
+    },
+  ],
+});
+const GUARD_MISMATCH_STDERR =
+  'Error updating bd-1: status mismatch: bd-1 has status "in_progress", expected "open"';
+
+function updateRunner(onUpdate: (args: string[]) => { stdout: string; stderr: string }) {
+  return new StubRunner((args) => {
+    if (args[0] === "version" || args[0] === "--version") {
+      return { stdout: "bd version 1.2.1", stderr: "" };
+    }
+    return onUpdate(args);
+  });
+}
+
+describe("BeadsCommandRunner.update", () => {
+  it("reports a conflict instead of throwing when bd exits 13", async () => {
+    const runner = updateRunner(() => {
+      throw exitWith(GUARD_MISMATCH_EXIT_CODE, GUARD_MISMATCH_STDOUT, GUARD_MISMATCH_STDERR);
+    });
+
+    const outcome = await runner.update({
+      id: "bd-1",
+      status: "blocked",
+      guard: { ifStatus: "open" },
+    });
+
+    expect(outcome).toEqual({
+      ok: false,
+      conflict: {
+        id: "bd-1",
+        field: "status",
+        expected: "open",
+        actual: "in_progress",
+        attempted: "blocked",
+      },
+    });
+  });
+
+  it("names the guarded field even when bd's message cannot be parsed", async () => {
+    const runner = updateRunner(() => {
+      throw exitWith(GUARD_MISMATCH_EXIT_CODE, "", "refused");
+    });
+
+    const outcome = await runner.update({
+      id: "bd-1",
+      assignee: "connor",
+      guard: { ifAssignee: "agent-7" },
+    });
+
+    expect(outcome).toEqual({
+      ok: false,
+      conflict: {
+        id: "bd-1",
+        field: "assignee",
+        expected: "agent-7",
+        actual: undefined,
+        attempted: "connor",
+      },
+    });
+  });
+
+  it("keeps throwing for failures that are not a stale precondition", async () => {
+    // Exit 1 is bd saying the command broke; nothing about it is recoverable
+    // by showing the user current values.
+    const runner = updateRunner(() => {
+      throw exitWith(1, "", "issue not found: bd-1");
+    });
+
+    await expect(
+      runner.update({ id: "bd-1", status: "closed", guard: { ifStatus: "open" } })
+    ).rejects.toThrow("issue not found: bd-1");
+  });
+
+  it("returns the written issue when the precondition holds", async () => {
+    const runner = updateRunner(() => ({
+      stdout: JSON.stringify([{ id: "bd-1", status: "in_progress" }]),
+      stderr: "",
+    }));
+
+    const outcome = await runner.update({
+      id: "bd-1",
+      status: "in_progress",
+      guard: { ifStatus: "open" },
+    });
+
+    expect(outcome).toEqual({ ok: true, issue: { id: "bd-1", status: "in_progress" } });
+    expect(runner.calls).toContainEqual([
+      "update",
+      "bd-1",
+      "--json",
+      "--status",
+      "in_progress",
+      "--if-status",
+      "open",
+    ]);
   });
 });

@@ -45,6 +45,14 @@ interface AppState {
   loading: boolean;
   error: string | null;
   settings: WebviewSettings;
+  /**
+   * Bumped whenever the extension reports a write bd refused.
+   *
+   * Surfaces that show an edit before it lands watch this to drop that
+   * optimistic state: the refused value will never arrive in real data, so
+   * nothing else would ever clear it.
+   */
+  writeConflicts: number;
 }
 
 const initialState: AppState = {
@@ -64,6 +72,7 @@ const initialState: AppState = {
   loading: true,
   error: null,
   settings: { renderMarkdown: true, userId: "", tooltipHoverDelay: 1000 },
+  writeConflicts: 0,
 };
 
 export function App(): React.ReactElement {
@@ -129,6 +138,11 @@ export function App(): React.ReactElement {
         break;
       case "showToast":
         triggerToast(message.text, "top-right");
+        break;
+      case "writeConflict":
+        // The extension has already raised the notification; this only clears
+        // the pending edit the surface is still drawing.
+        setState((prev) => ({ ...prev, writeConflicts: prev.writeConflicts + 1 }));
         break;
     }
   }, []);
@@ -218,11 +232,12 @@ export function App(): React.ReactElement {
             presetId={state.issuesPresetId}
             presetRequests={state.issuesPresetRequests}
             tooltipHoverDelay={state.settings.tooltipHoverDelay}
+            writeConflicts={state.writeConflicts}
             onSelectBead={(beadId) =>
               vscode.postMessage({ type: "openBeadDetails", beadId })
             }
-            onUpdateBead={(beadId, updates) =>
-              vscode.postMessage({ type: "updateBead", beadId, updates })
+            onUpdateBead={(beadId, updates, expect) =>
+              vscode.postMessage({ type: "updateBead", beadId, updates, expect })
             }
             onRetry={() =>
               vscode.postMessage({ type: "refresh" })
@@ -269,8 +284,9 @@ export function App(): React.ReactElement {
             renderMarkdown={state.settings.renderMarkdown}
             userId={state.settings.userId}
             knownAssignees={knownAssignees}
-            onUpdateBead={(beadId, updates) =>
-              vscode.postMessage({ type: "updateBead", beadId, updates })
+            writeConflicts={state.writeConflicts}
+            onUpdateBead={(beadId, updates, expect) =>
+              vscode.postMessage({ type: "updateBead", beadId, updates, expect })
             }
             onAddDependency={(beadId, targetId, dependencyType, reverse) =>
               vscode.postMessage({ type: "addDependency", beadId, targetId, dependencyType, reverse })

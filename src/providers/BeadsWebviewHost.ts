@@ -10,14 +10,17 @@
 
 import * as path from "path";
 import * as vscode from "vscode";
+import type { BeadsBackend, UpdateIssueArgs } from "../backend/BeadsBackend";
 import { BeadsProjectManager } from "../backend/BeadsProjectManager";
 import {
   Bead,
+  BeadWriteExpectation,
   BeadsProject,
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
   issueToWebviewBead,
 } from "../backend/types";
+import { buildWriteGuard, describeWriteConflict } from "../backend/write-guard";
 import { deriveGraph } from "../graph/BeadsGraph";
 import { BeadsGraphModel } from "../graph/types";
 import { Logger } from "../utils/logger";
@@ -226,6 +229,39 @@ export abstract class BeadsWebviewHost {
   /** Override in subclasses to handle surface-specific messages. */
   protected async handleCustomMessage(_message: WebviewToExtensionMessage): Promise<void> {
     // Default: do nothing
+  }
+
+  /**
+   * Applies one edit from a webview, conditioned on what that surface saw.
+   *
+   * Every surface writes through here so the guard cannot be attached on one
+   * path and forgotten on another. A refused write is reported and the surface
+   * is reloaded, because the only useful thing to show after losing a race is
+   * the value that won it.
+   */
+  protected async applyGuardedUpdate(
+    client: BeadsBackend,
+    args: UpdateIssueArgs,
+    expect: BeadWriteExpectation | undefined
+  ): Promise<void> {
+    try {
+      const outcome = await client.update({
+        ...args,
+        guard: buildWriteGuard(args, expect),
+      });
+
+      if (outcome.ok) return;
+
+      const message = describeWriteConflict(outcome.conflict);
+      this.log.info(`Guarded write refused for ${outcome.conflict.id}: ${message}`);
+      vscode.window.showWarningMessage(message);
+      // Optimistic state lives in the webview and only clears when real data
+      // agrees with it, which after a refused write it never will.
+      this.postMessage({ type: "writeConflict", beadId: outcome.conflict.id, message });
+      await this.loadData("background");
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed to update bead: ${err}`);
+    }
   }
 
   /** Opens a file in the editor, optionally at a specific line. */

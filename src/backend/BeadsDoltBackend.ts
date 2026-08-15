@@ -12,6 +12,7 @@ import {
   CreateIssueArgs,
   DependencyArgs,
   UpdateIssueArgs,
+  UpdateOutcome,
 } from "./BeadsBackend";
 import { BeadsCommandRunner } from "./BeadsCommandRunner";
 import { BeadEdge } from "./types";
@@ -350,7 +351,9 @@ export class BeadsDoltBackend implements BeadsBackend {
     return this.cli.create(args);
   }
 
-  async update(args: UpdateIssueArgs): Promise<BeadsIssue> {
+  // Writes stay on the CLI even here, so guarded updates behave identically on
+  // both backends - there is one place where a precondition can be dropped.
+  async update(args: UpdateIssueArgs): Promise<UpdateOutcome> {
     return this.cli.update(args);
   }
 
