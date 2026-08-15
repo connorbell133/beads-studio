@@ -11,9 +11,9 @@ import {
   DEFAULT_LENS,
   GRAPH_LENSES,
   LensBead,
-  listEpics,
-  visibleEpics,
-  hiddenEpicCount,
+  listContainers,
+  visibleContainers,
+  hiddenContainerCount,
 } from "../lens";
 import type { BeadsGraphModel, GraphInputEdge, GraphInputNode } from "../types";
 
@@ -434,7 +434,7 @@ describe("epic lens", () => {
   );
 
   it("draws the epic and every descendant, tethered so the subtree converges on it", () => {
-    const result = applyLens(project.model, project.beads, { lens: "epic", epicId: "e1" });
+    const result = applyLens(project.model, project.beads, { lens: "epic", containerId: "e1" });
 
     expect(ids(result)).toEqual(["e1", "s1", "t1", "t2"]);
     expect(result.focusId).toBe("e1");
@@ -449,7 +449,7 @@ describe("epic lens", () => {
   });
 
   it("keeps blocking edges among members and drops those crossing the boundary", () => {
-    const result = applyLens(project.model, project.beads, { lens: "epic", epicId: "e1" });
+    const result = applyLens(project.model, project.beads, { lens: "epic", containerId: "e1" });
 
     expect(
       result.edges
@@ -461,7 +461,7 @@ describe("epic lens", () => {
   });
 
   it("puts the subtree's progress on the epic's own card", () => {
-    const result = applyLens(project.model, project.beads, { lens: "epic", epicId: "e1" });
+    const result = applyLens(project.model, project.beads, { lens: "epic", containerId: "e1" });
     const epic = result.nodes.find((node) => node.id === "e1");
     const member = result.nodes.find((node) => node.id === "t2");
 
@@ -478,13 +478,13 @@ describe("epic lens", () => {
   });
 
   it("has nothing to draw when the epic id is not a visible bead", () => {
-    const result = applyLens(project.model, project.beads, { lens: "epic", epicId: "nope" });
+    const result = applyLens(project.model, project.beads, { lens: "epic", containerId: "nope" });
 
     expect(result.nodes).toEqual([]);
   });
 
   it("draws a childless epic alone rather than pretending it does not exist", () => {
-    const result = applyLens(project.model, project.beads, { lens: "epic", epicId: "t2" });
+    const result = applyLens(project.model, project.beads, { lens: "epic", containerId: "t2" });
 
     // t2 contains nothing, so the lens is one node with no progress line.
     expect(ids(result)).toEqual(["t2"]);
@@ -498,14 +498,14 @@ describe("epic lens", () => {
       raw("e", { issue_type: "epic" }),
     ]);
 
-    const result = applyLens(model, beads, { lens: "epic", epicId: "e" });
+    const result = applyLens(model, beads, { lens: "epic", containerId: "e" });
 
     // Neither ring member reaches e; the walk must not hang deciding that.
     expect(ids(result)).toEqual(["e"]);
   });
 });
 
-describe("listEpics", () => {
+describe("listContainers", () => {
   it("offers typed epics and implicit containers, with subtree progress", () => {
     const { model, beads } = build([
       raw("e1", { issue_type: "epic" }),
@@ -515,16 +515,51 @@ describe("listEpics", () => {
       raw("loose"),
     ]);
 
-    expect(listEpics(model, beads)).toEqual([
+    expect(listContainers(model, beads)).toEqual([
       { id: "e1", label: "Bead e1", total: 3, closed: 1, complete: false },
       { id: "s1", label: "Bead s1", total: 1, closed: 1, complete: true },
+    ]);
+  });
+
+  it("offers a milestone on the same terms as an epic", () => {
+    // A first-class bd type with its own glyph that the picker never looked at,
+    // because the filter compared against the string "epic".
+    const { model, beads } = build([
+      raw("m1", { issue_type: "milestone" }),
+      raw("t1", { parent: "m1", status: "closed" }),
+      raw("t2", { parent: "m1" }),
+    ]);
+
+    expect(listContainers(model, beads)).toEqual([
+      { id: "m1", label: "Bead m1", total: 2, closed: 1, complete: false },
+    ]);
+  });
+
+  it("offers an empty milestone, as it does an empty epic", () => {
+    const { model, beads } = build([raw("m1", { issue_type: "milestone" }), raw("loose")]);
+
+    expect(listContainers(model, beads)).toEqual([
+      { id: "m1", label: "Bead m1", total: 0, closed: 0, complete: false },
+    ]);
+  });
+
+  it("offers a milestone and the epics inside it as separate anchors", () => {
+    const { model, beads } = build([
+      raw("m1", { issue_type: "milestone" }),
+      raw("e1", { issue_type: "epic", parent: "m1" }),
+      raw("t1", { parent: "e1" }),
+    ]);
+
+    expect(listContainers(model, beads)).toEqual([
+      { id: "e1", label: "Bead e1", total: 1, closed: 0, complete: false },
+      { id: "m1", label: "Bead m1", total: 2, closed: 0, complete: false },
     ]);
   });
 
   it("offers an empty epic - it is still a place work will go", () => {
     const { model, beads } = build([raw("e1", { issue_type: "epic" }), raw("loose")]);
 
-    expect(listEpics(model, beads)).toEqual([
+    expect(listContainers(model, beads)).toEqual([
       { id: "e1", label: "Bead e1", total: 0, closed: 0, complete: false },
     ]);
   });
@@ -535,13 +570,13 @@ describe("listEpics", () => {
       raw("t", { parent: "g" }),
     ]);
 
-    expect(listEpics(model, beads)).toEqual([]);
+    expect(listContainers(model, beads)).toEqual([]);
   });
 
   it("returns nothing for a flat project", () => {
     const { model, beads } = build([raw("a"), raw("b")]);
 
-    expect(listEpics(model, beads)).toEqual([]);
+    expect(listContainers(model, beads)).toEqual([]);
   });
 });
 
@@ -559,7 +594,7 @@ describe("satisfied dependencies", () => {
 
   it("keeps the edge and marks it satisfied once the blocker closes", () => {
     const { model, beads } = epicWith("closed");
-    const result = applyLens(model, beads, { lens: "epic", epicId: "e1" });
+    const result = applyLens(model, beads, { lens: "epic", containerId: "e1" });
 
     const edge = result.edges.find((e) => e.blocker === "t1" && e.blocked === "t2");
     expect(edge).toBeDefined();
@@ -572,7 +607,7 @@ describe("satisfied dependencies", () => {
     // move anything.
     const before = epicWith("open");
     const after = epicWith("closed");
-    const lensOpts = { lens: "epic" as const, epicId: "e1" };
+    const lensOpts = { lens: "epic" as const, containerId: "e1" };
 
     const a = applyLens(before.model, before.beads, lensOpts);
     const b = applyLens(after.model, after.beads, lensOpts);
@@ -584,7 +619,7 @@ describe("satisfied dependencies", () => {
 
   it("does not leave the dependent looking blocked", () => {
     const { model, beads } = epicWith("closed");
-    const result = applyLens(model, beads, { lens: "epic", epicId: "e1" });
+    const result = applyLens(model, beads, { lens: "epic", containerId: "e1" });
 
     expect(result.nodes.find((n) => n.id === "t2")?.blocked).toBe(false);
     expect(result.nodes.find((n) => n.id === "t2")?.ready).toBe(true);
@@ -592,7 +627,7 @@ describe("satisfied dependencies", () => {
 
   it("marks a live blocker unsatisfied", () => {
     const { model, beads } = epicWith("open");
-    const result = applyLens(model, beads, { lens: "epic", epicId: "e1" });
+    const result = applyLens(model, beads, { lens: "epic", containerId: "e1" });
 
     expect(result.edges.find((e) => e.blocker === "t1")?.satisfied).toBe(false);
   });
@@ -634,7 +669,7 @@ describe("satisfied dependencies", () => {
 
   it("stays deterministic across two applications", () => {
     const { model, beads } = epicWith("closed");
-    const opts = { lens: "epic" as const, epicId: "e1" };
+    const opts = { lens: "epic" as const, containerId: "e1" };
 
     const first = applyLens(model, beads, opts);
     const second = applyLens(model, beads, opts);
@@ -654,20 +689,20 @@ describe("epic completion", () => {
   it("marks an epic complete once every member has closed", () => {
     const { model, beads } = epicOf(["closed", "closed", "closed"]);
 
-    expect(listEpics(model, beads)[0]).toMatchObject({ id: "e1", closed: 3, total: 3, complete: true });
+    expect(listContainers(model, beads)[0]).toMatchObject({ id: "e1", closed: 3, total: 3, complete: true });
   });
 
   it("leaves an epic incomplete while any member is open", () => {
     const { model, beads } = epicOf(["closed", "closed", "open"]);
 
-    expect(listEpics(model, beads)[0].complete).toBe(false);
+    expect(listContainers(model, beads)[0].complete).toBe(false);
   });
 
   it("never calls a memberless epic complete", () => {
     // 0 of 0 is not an achievement, and hiding it would make it unreachable.
     const { model, beads } = build([raw("e1", { issue_type: "epic", status: "closed" })]);
 
-    expect(listEpics(model, beads)[0]).toMatchObject({ total: 0, complete: false });
+    expect(listContainers(model, beads)[0]).toMatchObject({ total: 0, complete: false });
   });
 
   it("reads membership, not the epic's own status", () => {
@@ -676,11 +711,11 @@ describe("epic completion", () => {
       raw("t0", { parent: "e1" }),
     ]);
 
-    expect(listEpics(model, beads)[0].complete).toBe(false);
+    expect(listContainers(model, beads)[0].complete).toBe(false);
   });
 });
 
-describe("visibleEpics", () => {
+describe("visibleContainers", () => {
   const epic = (id: string, complete: boolean) => ({
     id,
     label: id,
@@ -691,11 +726,11 @@ describe("visibleEpics", () => {
   const all = [epic("live1", false), epic("done1", true), epic("live2", false), epic("done2", true)];
 
   it("hides finished epics by default", () => {
-    expect(visibleEpics(all, false, null).map((e) => e.id)).toEqual(["live1", "live2"]);
+    expect(visibleContainers(all, false, null).map((e) => e.id)).toEqual(["live1", "live2"]);
   });
 
   it("lists everything when asked, in the original order", () => {
-    expect(visibleEpics(all, true, null).map((e) => e.id)).toEqual([
+    expect(visibleContainers(all, true, null).map((e) => e.id)).toEqual([
       "live1",
       "done1",
       "live2",
@@ -706,7 +741,7 @@ describe("visibleEpics", () => {
   it("keeps the anchored epic listed after it completes", () => {
     // Otherwise the picker drops the epic you are watching at the moment its
     // last bead closes, and the lens falls through to an unrelated one.
-    expect(visibleEpics(all, false, "done1").map((e) => e.id)).toEqual([
+    expect(visibleContainers(all, false, "done1").map((e) => e.id)).toEqual([
       "live1",
       "done1",
       "live2",
@@ -716,12 +751,12 @@ describe("visibleEpics", () => {
   it("keeps the anchor even when it is the only epic left", () => {
     const finished = [epic("done1", true), epic("done2", true)];
 
-    expect(visibleEpics(finished, false, "done2").map((e) => e.id)).toEqual(["done2"]);
+    expect(visibleContainers(finished, false, "done2").map((e) => e.id)).toEqual(["done2"]);
   });
 
   it("counts what the default filter holds back", () => {
-    expect(hiddenEpicCount(all, null)).toBe(2);
-    expect(hiddenEpicCount(all, "done1")).toBe(1);
-    expect(hiddenEpicCount([epic("live1", false)], null)).toBe(0);
+    expect(hiddenContainerCount(all, null)).toBe(2);
+    expect(hiddenContainerCount(all, "done1")).toBe(1);
+    expect(hiddenContainerCount([epic("live1", false)], null)).toBe(0);
   });
 });

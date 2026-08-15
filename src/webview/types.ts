@@ -10,7 +10,7 @@
 import type { BeadsGraphModel } from "../graph/types";
 
 export type { BeadsGraphModel, BeadGraphNode } from "../graph/types";
-export { COORDINATION_TYPES } from "../graph/types";
+export { COORDINATION_TYPES, CONTAINER_TYPES, isContainerType } from "../graph/types";
 
 // Re-export types that are shared between extension and webview.
 //

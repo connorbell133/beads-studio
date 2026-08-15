@@ -3,9 +3,14 @@
  *
  * The Issues list, styled after Linear and mapped to beads-native objects.
  * Rows are [priority | id | status | type | title | dependency chips | meta],
- * grouped under their root parent (the epic) with a sticky, collapsible
+ * grouped under their root parent - the container - with a sticky, collapsible
  * header. Filtering and facets happen upstream in TanStack state; this
  * renders the buildTree result and nothing else.
+ *
+ * "Container" is any bead holding work: an epic, a milestone, or anything that
+ * turned out to be some other bead's parent. The group header carries what the
+ * graph already derived about it and no surface printed - closed-of-total, the
+ * summed member estimate, and the longest internal blocker chain.
  */
 
 import React, { useMemo } from "react";
@@ -16,6 +21,7 @@ import {
   BeadStatus,
   BeadsGraphModel,
   BeadType,
+  isContainerType,
   PRIORITY_LABELS,
   STATUS_LABELS,
   sortLabels,
@@ -24,6 +30,8 @@ import { buildTree, TreeBead, TreeRollup } from "../../graph/tree";
 import { GRAPHIC_TOKENS } from "../theme/tokens";
 import { Dropdown, DropdownItem } from "../common/Dropdown";
 import { Avatar } from "../common/Avatar";
+import { CriticalPath } from "../common/CriticalPath";
+import { EstimateBadge } from "../common/EstimateBadge";
 import { LabelBadge } from "../common/LabelBadge";
 import { PriorityIcon } from "../common/PriorityIcon";
 import { StatusRing } from "../common/StatusRing";
@@ -38,7 +46,15 @@ const SHOW_DATE_AT = 360;
 const SHOW_AVATAR_AT = 440;
 const SHOW_LABELS_AT = 560;
 
-/** Reserved key for the "No epic" group inside the persisted expanded record. */
+/**
+ * Container rollups enter the group header on the same title-first principle.
+ * The estimate is the shorter and the more often actionable of the two, so it
+ * arrives first; the critical path waits for room to spell out its chain.
+ */
+const SHOW_ESTIMATE_AT = 420;
+const SHOW_CRITICAL_PATH_AT = 520;
+
+/** Reserved key for the ungrouped lane inside the persisted expanded record. */
 const NO_EPIC_KEY = "__orphans__";
 
 const PRIORITIES: readonly BeadPriority[] = [0, 1, 2, 3, 4];
@@ -240,17 +256,19 @@ export function LinearList({
   onRowMouseEnter,
   onRowMouseLeave,
 }: LinearListProps): React.ReactElement {
-  // An epic heads its own group even with nothing under it yet. Only once the
-  // graph is known: without it there is no hierarchy for anything to be the top
-  // of, and every bead is already its own root.
-  const isEpic = (bead: { type?: string }): boolean => Boolean(graph) && bead.type === "epic";
-  const epicIds = useMemo(
-    () => beads.filter(isEpic).map((bead) => bead.id),
+  // A container heads its own group even with nothing under it yet - an epic,
+  // a milestone, anything whose job is to hold work. Only once the graph is
+  // known: without it there is no hierarchy for anything to be the top of, and
+  // every bead is already its own root.
+  const isContainer = (bead: { type?: string }): boolean =>
+    Boolean(graph) && isContainerType(bead.type);
+  const containerIds = useMemo(
+    () => beads.filter(isContainer).map((bead) => bead.id),
     [beads, graph]
   );
   const tree = useMemo(
-    () => buildTree(beads, graph, { matched, containers: epicIds }),
-    [beads, graph, matched, epicIds]
+    () => buildTree(beads, graph, { matched, containers: containerIds }),
+    [beads, graph, matched, containerIds]
   );
 
   // Who waits on whom, inverted from each node's open blockers. Powers the
@@ -268,14 +286,14 @@ export function LinearList({
     return map;
   }, [graph]);
 
-  // Epics head a group whether or not anything is under them; so does any root
-  // with visible children. What is left - non-epic roots with nothing showing,
-  // which is the no-graph fallback and roots whose children were all filtered
-  // away - joins the orphans under "No epic".
+  // Containers head a group whether or not anything is under them; so does any
+  // root with visible children. What is left - non-container roots with nothing
+  // showing, which is the no-graph fallback and roots whose children were all
+  // filtered away - joins the orphans in the ungrouped lane.
   const groups = useMemo(
     () =>
       tree.roots
-        .filter((root) => root.subRows?.length || isEpic(root))
+        .filter((root) => root.subRows?.length || isContainer(root))
         .sort(
           (a, b) => (a.priority ?? 5) - (b.priority ?? 5) || a.id.localeCompare(b.id)
         ),
@@ -283,7 +301,7 @@ export function LinearList({
   );
   const loose = useMemo(
     () => [
-      ...tree.roots.filter((root) => !root.subRows?.length && !isEpic(root)),
+      ...tree.roots.filter((root) => !root.subRows?.length && !isContainer(root)),
       ...tree.orphans,
     ],
     [tree, graph]
@@ -301,6 +319,8 @@ export function LinearList({
   const showLabels = width === null || width >= SHOW_LABELS_AT;
   const showAvatar = width === null || width >= SHOW_AVATAR_AT;
   const showDate = width === null || width >= SHOW_DATE_AT;
+  const showEstimate = width === null || width >= SHOW_ESTIMATE_AT;
+  const showCriticalPath = width === null || width >= SHOW_CRITICAL_PATH_AT;
 
   const renderRow = ({ bead, depth }: FlatRow): React.ReactElement => {
     const node = graph?.nodes[bead.id];
@@ -389,6 +409,23 @@ export function LinearList({
               </button>
               {root.treeRollup && <RollupRing rollup={root.treeRollup} />}
               <span className="lin-group-count">{rows.length}</span>
+              {showEstimate && root.treeEstimate && (
+                <EstimateBadge estimate={root.treeEstimate} />
+              )}
+              {/* The one planning number that does not improve by adding
+                  people - shown only once there is a sequence to state. Depth 1
+                  is the common case and reads as "no internal sequence", which
+                  on every header at once is noise, not a finding. The click
+                  toggles the chain, so it is fenced off from the header. */}
+              {showCriticalPath && (root.treeCriticalPath ?? 0) > 1 && (
+                <span className="lin-group-path" onClick={(e) => e.stopPropagation()}>
+                  <CriticalPath
+                    depth={root.treeCriticalPath as number}
+                    chain={root.treeCriticalChain}
+                    onSelectBead={onSelectBead}
+                  />
+                </span>
+              )}
               <span className="lin-spacer" />
               <StatusSelect
                 status={root.status}
@@ -407,12 +444,12 @@ export function LinearList({
                 type="button"
                 className="lin-group-chevron"
                 aria-expanded={isOpen(NO_EPIC_KEY)}
-                aria-label={`${isOpen(NO_EPIC_KEY) ? "Collapse" : "Expand"} No epic`}
+                aria-label={`${isOpen(NO_EPIC_KEY) ? "Collapse" : "Expand"} ungrouped work`}
                 onClick={() => toggle(NO_EPIC_KEY)}
               >
                 <Chevron open={isOpen(NO_EPIC_KEY)} />
               </button>
-              <span className="lin-group-title lin-group-title-plain">No epic</span>
+              <span className="lin-group-title lin-group-title-plain">Ungrouped</span>
               <span className="lin-group-count">{loose.length}</span>
             </header>
           )}

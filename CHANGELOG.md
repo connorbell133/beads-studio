@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Milestones are containers like epics: they head their own group in the Issues list, carry a progress ring, and are anchorable in the graph's container lens
+- Container group headers sum the `estimatedMinutes` of everything inside them, marked as a floor when some member is unsized
+- Container group headers show the longest internal blocker chain, expandable to the beads that make it that deep
+
+### Changed
+
+- The graph's epic lens is now the container lens: it draws epics, milestones, and anything else holding work
+- Loose beads in the Issues list group under "Ungrouped" rather than "No epic"
+
 ### Fixed
 
 - Tree mode heads an epic's own group even before it has any tasks, instead of filing it under "No epic"

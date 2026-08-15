@@ -25,6 +25,7 @@
  * parent-child loop reports itself instead of expanding forever.
  */
 
+import { formatMinutes } from "./duration";
 import { BeadsGraphModel } from "./types";
 
 /** Direct-child completion on a bead that has children. */
@@ -35,6 +36,25 @@ export interface TreeRollup {
   percent: number;
   /** "7/12" - the readable form, so completion is not progress-by-colour. */
   label: string;
+}
+
+/** Summed member estimates on a bead that contains work. */
+export interface TreeEstimate {
+  /** Total minutes across members carrying an estimate. */
+  minutes: number;
+  /** Members carrying an estimate. */
+  counted: number;
+  /** Members in the subtree. */
+  total: number;
+  /** "12h 30m" - the readable form. */
+  label: string;
+  /**
+   * Some member has no estimate, so this total is a floor.
+   *
+   * Carried rather than inferred at each call site, because a partial sum shown
+   * as a whole is the failure mode estimates are famous for.
+   */
+  partial: boolean;
 }
 
 /**
@@ -52,6 +72,8 @@ export type TreeBead<T> = T & {
   treeContext: boolean;
   /** Present only when the bead has children at all. */
   treeRollup?: TreeRollup;
+  /** Present only when some member of the subtree carries an estimate. */
+  treeEstimate?: TreeEstimate;
   /**
    * Longest blocker chain among this bead's members, when it has any.
    *
@@ -91,10 +113,10 @@ export interface BuildTreeOptions {
    * Ids that head their own group even with nothing under them.
    *
    * Containment alone decides the rest of this split, which files a freshly
-   * created epic - one that has no tasks yet - in the same lane as standalone
-   * work. "No epic" is then printed over a row that is itself an epic. An empty
-   * epic is not loose work; it is a place work will go, and the epic picker on
-   * the graph already lists it as one.
+   * created container - an epic or milestone that has no tasks yet - in the
+   * same lane as standalone work. "No epic" is then printed over a row that is
+   * itself an epic. An empty container is not loose work; it is a place work
+   * will go, and the container picker on the graph already lists it as one.
    */
   containers?: Iterable<string>;
 }
@@ -152,6 +174,7 @@ export function buildTree<T extends { id: string }>(
       treeDepth: depthOf.get(bead.id) ?? 0,
       treeContext: !isMatch(bead.id),
       treeRollup: rollupFor(graph, bead.id),
+      treeEstimate: estimateFor(graph, bead.id),
       ...criticalPathFor(graph, bead.id),
       treeCycle: cycleSet.has(bead.id),
     });
@@ -259,11 +282,11 @@ function computeDepths(included: Set<string>, parentOf: Map<string, string>): Ma
 }
 
 /**
- * The epic's critical path and the chain that sets it.
+ * The container's critical path and the chain that sets it.
  *
  * Only reported for beads that actually contain members - a depth on a leaf is
  * just its own rank restated. The chain comes from the deepest member's
- * blockerChain, which is the sequence that makes the epic that deep.
+ * blockerChain, which is the sequence that makes the container that deep.
  */
 function criticalPathFor(
   graph: BeadsGraphModel,
@@ -295,6 +318,25 @@ function rollupFor(graph: BeadsGraphModel, id: string): TreeRollup | undefined {
     total: counts.total,
     percent: Math.round((counts.closed / counts.total) * 100),
     label: `${counts.closed}/${counts.total}`,
+  };
+}
+
+/**
+ * Summed member estimates, read straight off the model.
+ *
+ * The model only records this where a member actually has an estimate, so an
+ * absent field here means "nobody estimated anything under this bead", never
+ * "this bead is free".
+ */
+function estimateFor(graph: BeadsGraphModel, id: string): TreeEstimate | undefined {
+  const estimate = graph.nodes[id]?.memberEstimate;
+  if (!estimate || estimate.counted === 0) return undefined;
+  return {
+    minutes: estimate.minutes,
+    counted: estimate.counted,
+    total: estimate.total,
+    label: formatMinutes(estimate.minutes),
+    partial: estimate.counted < estimate.total,
   };
 }
 

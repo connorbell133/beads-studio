@@ -27,6 +27,7 @@ import {
   DeriveGraphOptions,
   GraphInputEdge,
   GraphInputNode,
+  isContainerType,
 } from "./types";
 
 const BLOCKS = "blocks";
@@ -94,6 +95,7 @@ export function deriveGraph(
     new Set(findCycles(ids, dependsOn).flat())
   );
   const { parentOf, childrenOf } = resolveHierarchy(inputNodes, inputEdges, byId);
+  const memberEstimates = computeMemberEstimates(inputNodes, parentOf);
 
   const nodes: Record<string, BeadGraphNode> = {};
   const ready: string[] = [];
@@ -132,10 +134,17 @@ export function deriveGraph(
         total: children.length,
       };
       node.criticalPath = Math.max(...children.map((c) => rank.get(c) ?? 0)) + 1;
-    } else if (raw.issue_type === "epic") {
-      // An epic with no members still has its own depth.
+    } else if (isContainerType(raw.issue_type)) {
+      // A container with no members still has its own depth. Epics were the
+      // only type this held for; a milestone is no less empty.
       node.criticalPath = 1;
     }
+
+    // Only where there is something to say. A container whose members all lack
+    // an estimate gets no field, so no surface has to decide whether `0m` means
+    // "free" or "unknown".
+    const estimate = memberEstimates.get(id);
+    if (estimate && estimate.counted > 0) node.memberEstimate = estimate;
 
     nodes[id] = node;
     if (isWork && isOpen) (isReady ? ready : blocked).push(id);
@@ -357,6 +366,57 @@ function longestBlockerChain(
     visited.add(deepest);
     current = deepest;
   }
+}
+
+/**
+ * Member estimates, summed up every ancestor chain.
+ *
+ * bd has recorded `estimated_minutes` per bead since before this extension
+ * existed and no surface ever added two of them together, so the one planning
+ * number the backlog already carries was thrown away at every level above the
+ * leaf. This is the sum, and the count it was drawn from - a total over
+ * eleven of twenty members is a floor, and printing it as though it were the
+ * whole is how estimates start lying.
+ *
+ * Accumulated upward rather than by walking each container's subtree: each
+ * bead visits its own ancestors once, which is O(nodes x depth) instead of
+ * O(nodes x subtree), and the per-walk visited set means a parent-child loop
+ * stops instead of counting forever. Zero and negative estimates are treated
+ * as absent - bd writes no estimate as no field, and a recorded `0` says the
+ * same thing.
+ */
+function computeMemberEstimates(
+  inputNodes: GraphInputNode[],
+  parentOf: Map<string, string>
+): Map<string, { minutes: number; counted: number; total: number }> {
+  const rollup = new Map<string, { minutes: number; counted: number; total: number }>();
+  const bump = (id: string): { minutes: number; counted: number; total: number } => {
+    const existing = rollup.get(id);
+    if (existing) return existing;
+    const fresh = { minutes: 0, counted: 0, total: 0 };
+    rollup.set(id, fresh);
+    return fresh;
+  };
+
+  for (const node of inputNodes) {
+    const raw = node.estimated_minutes;
+    const estimate = typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : 0;
+
+    const seen = new Set<string>([node.id]);
+    let ancestor = parentOf.get(node.id);
+    while (ancestor !== undefined && !seen.has(ancestor)) {
+      seen.add(ancestor);
+      const totals = bump(ancestor);
+      totals.total += 1;
+      if (estimate > 0) {
+        totals.minutes += estimate;
+        totals.counted += 1;
+      }
+      ancestor = parentOf.get(ancestor);
+    }
+  }
+
+  return rollup;
 }
 
 /**

@@ -26,6 +26,7 @@ import userSvg from "./user.svg";
 import tagSvg from "./tag.svg";
 import externalLinkSvg from "./external-link.svg";
 import arrowsRotateSvg from "./arrows-rotate.svg";
+import clockSvg from "./clock.svg";
 import notdefSvg from "./notdef.svg";
 
 export const icons = {
@@ -49,6 +50,7 @@ export const icons = {
   tag: tagSvg,
   "external-link": externalLinkSvg,
   "arrows-rotate": arrowsRotateSvg,
+  clock: clockSvg,
   notdef: notdefSvg,
 } as const;
 
