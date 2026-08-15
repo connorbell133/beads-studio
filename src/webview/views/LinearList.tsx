@@ -21,6 +21,7 @@ import {
   sortLabels,
 } from "../types";
 import { buildTree, TreeBead, TreeRollup } from "../../graph/tree";
+import { partitionBlockers, waitingOnHuman } from "../../graph/human-inbox";
 import { GRAPHIC_TOKENS } from "../theme/tokens";
 import { Dropdown, DropdownItem } from "../common/Dropdown";
 import { Avatar } from "../common/Avatar";
@@ -46,6 +47,13 @@ const PRIORITIES: readonly BeadPriority[] = [0, 1, 2, 3, 4];
 interface LinearListProps {
   beads: Bead[];
   graph: BeadsGraphModel | null;
+  /**
+   * Ids waiting on a person, computed over the unfiltered bead set upstream.
+   *
+   * Falls back to what this view can see on its own, which catches human-
+   * labelled work beads but not gates - gates never reach here.
+   */
+  humanWaitingIds?: readonly string[];
   /** Ids that pass the active filters; ancestors outside it render as context. */
   matched: string[];
   /** Live width of the list, for meta hiding. Null until first measure. */
@@ -159,20 +167,45 @@ function RollupRing({ rollup }: { rollup: TreeRollup }): React.ReactElement {
   );
 }
 
-/** Dependency count as a Linear-style pill: icon + count, ids in the tooltip. */
+/**
+ * Dependency count as a Linear-style pill: icon + count, ids in the tooltip.
+ *
+ * Three kinds, not two. "Blocked by a person" was split out of "blocked by"
+ * because the two have opposite implications and had one appearance: a question
+ * waiting on a human clears the moment someone answers it, and work waits for
+ * however long the work takes. Reading them as the same red pill is what makes
+ * a stalled question look like a scheduling problem instead of an inbox item.
+ */
 function DepChip({
   kind,
   ids,
 }: {
-  kind: "blockedBy" | "blocks";
+  kind: "blockedBy" | "blockedByPerson" | "blocks";
   ids: string[];
 }): React.ReactElement {
   const listed = ids.slice(0, 8).join(", ") + (ids.length > 8 ? ", …" : "");
-  const title = kind === "blockedBy" ? `Blocked by: ${listed}` : `Blocking: ${listed}`;
+  const title =
+    kind === "blockedByPerson"
+      ? `Waiting on a person: ${listed}`
+      : kind === "blockedBy"
+        ? `Blocked by: ${listed}`
+        : `Blocking: ${listed}`;
   return (
     <span className={`lin-chip lin-chip-${kind}`} title={title}>
       <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-        {kind === "blockedBy" ? (
+        {kind === "blockedByPerson" ? (
+          // A head and shoulders: someone, not something, is in the way.
+          <>
+            <circle cx="5" cy="3.1" r="1.9" fill="none" stroke="currentColor" strokeWidth="1.3" />
+            <path
+              d="M1.6 9 C1.6 6.6 3.1 5.6 5 5.6 C6.9 5.6 8.4 6.6 8.4 9"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinecap="round"
+            />
+          </>
+        ) : kind === "blockedBy" ? (
           // A "banned" glyph: ring with the slash — this bead cannot move.
           <>
             <circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" strokeWidth="1.4" />
@@ -226,6 +259,7 @@ function flatten(rows: TreeBead<Bead>[] | undefined, depth: number, out: FlatRow
 export function LinearList({
   beads,
   graph,
+  humanWaitingIds,
   matched,
   width,
   selectedBeadId,
@@ -251,6 +285,13 @@ export function LinearList({
   const tree = useMemo(
     () => buildTree(beads, graph, { matched, containers: epicIds }),
     [beads, graph, matched, epicIds]
+  );
+
+  // Which blockers a person has to clear. Supplied by App when it can see the
+  // whole set including gates; derived from what is here otherwise.
+  const waiting = useMemo(
+    () => (humanWaitingIds ? new Set(humanWaitingIds) : waitingOnHuman(beads)),
+    [humanWaitingIds, beads]
   );
 
   // Who waits on whom, inverted from each node's open blockers. Powers the
@@ -304,7 +345,9 @@ export function LinearList({
 
   const renderRow = ({ bead, depth }: FlatRow): React.ReactElement => {
     const node = graph?.nodes[bead.id];
-    const blockedBy = node?.blockedBy ?? [];
+    // Two chips, not one: a blocker that is a question clears itself the moment
+    // someone answers, and a blocker that is work waits for the work.
+    const { people, work } = partitionBlockers(node?.blockedBy ?? [], waiting);
     const blocks = blocking.get(bead.id) ?? [];
     const labels = showLabels ? sortLabels(bead.labels) : [];
     return (
@@ -338,7 +381,8 @@ export function LinearList({
         />
         {bead.type && <TypeIcon type={bead.type as BeadType} size={14} />}
         <span className="lin-title">{bead.title}</span>
-        {blockedBy.length > 0 && <DepChip kind="blockedBy" ids={blockedBy} />}
+        {people.length > 0 && <DepChip kind="blockedByPerson" ids={people} />}
+        {work.length > 0 && <DepChip kind="blockedBy" ids={work} />}
         {blocks.length > 0 && <DepChip kind="blocks" ids={blocks} />}
         {bead.treeRollup && <RollupRing rollup={bead.treeRollup} />}
         <span className="lin-spacer" />

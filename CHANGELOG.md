@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- "Needs You" sidebar view: everything awaiting a human decision — beads bd's `bd human list` reports, plus open gates awaiting a manual resolve — ranked by stall cost (beads frozen behind it × how long it has waited), not by age. Each row shows what it is damming and for how long, and answers or dismisses it in place via `bd human respond` / `bd human dismiss`. The view header carries the waiting count as a badge
+
+### Changed
+
+- Blockers waiting on a person are told apart from blockers waiting on work wherever blockers render — the Issues list and board get a separate person chip, and the graph's blocker links name a gate as "needs a person" instead of "not loaded"
+
 ### Fixed
 
 - Tree mode heads an epic's own group even before it has any tasks, instead of filing it under "No epic"

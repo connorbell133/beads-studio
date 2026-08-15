@@ -10,6 +10,7 @@ import * as vscode from "vscode";
 import { BeadsProjectManager } from "./backend/BeadsProjectManager";
 import { DashboardViewProvider } from "./providers/DashboardViewProvider";
 import { BeadsPanelViewProvider } from "./providers/BeadsPanelViewProvider";
+import { NeedsYouViewProvider } from "./providers/NeedsYouViewProvider";
 import { BeadDetailsViewProvider } from "./providers/BeadDetailsViewProvider";
 import { BeadsGraphPanel } from "./providers/BeadsGraphPanel";
 import { BeadsSelection } from "./providers/BeadsSelection";
@@ -21,6 +22,7 @@ let log: Logger;
 let projectManager: BeadsProjectManager;
 let dashboardProvider: DashboardViewProvider;
 let beadsPanelProvider: BeadsPanelViewProvider;
+let needsYouProvider: NeedsYouViewProvider;
 let detailsProvider: BeadDetailsViewProvider;
 let graphPanel: BeadsGraphPanel;
 let selection: BeadsSelection;
@@ -69,6 +71,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     log
   );
 
+  // The human inbox. Registered like any other sidebar surface; what makes it
+  // different is that it is the only one that reads coordination beads and the
+  // only one that issues `bd human` verbs.
+  needsYouProvider = new NeedsYouViewProvider(
+    context.extensionUri,
+    projectManager,
+    log
+  );
+
   detailsProvider = new BeadDetailsViewProvider(
     context.extensionUri,
     projectManager,
@@ -94,7 +105,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   context.subscriptions.push(
     selection.onDidChange(({ beadId, origin }) => {
-      for (const surface of [dashboardProvider, beadsPanelProvider, detailsProvider, graphPanel]) {
+      for (const surface of [dashboardProvider, needsYouProvider, beadsPanelProvider, detailsProvider, graphPanel]) {
         surface.applySelection(beadId, origin);
       }
     })
@@ -103,6 +114,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Register webview providers
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("beadsDashboard", dashboardProvider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+    vscode.window.registerWebviewViewProvider("beadsNeedsYou", needsYouProvider, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
     vscode.window.registerWebviewViewProvider("beadsPanel", beadsPanelProvider, {
@@ -136,6 +150,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand("beads.showReady", () => {
       vscode.commands.executeCommand("beadsDashboard.focus");
+    }),
+
+    vscode.commands.registerCommand("beads.showNeedsYou", () => {
+      vscode.commands.executeCommand("beadsNeedsYou.focus");
     }),
 
     vscode.commands.registerCommand("beads.findInGraph", () => {
@@ -189,6 +207,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       log.info("Manual refresh triggered");
       await projectManager.refresh();
       dashboardProvider.hardRefresh();
+      needsYouProvider.hardRefresh();
       beadsPanelProvider.hardRefresh();
       detailsProvider.hardRefresh();
       graphPanel.hardRefresh();
@@ -209,6 +228,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         log.info(`Started Dolt server for ${project.name}: ${output || "<no output>"}`);
         await projectManager.refresh();
         dashboardProvider.refresh();
+        needsYouProvider.refresh();
         beadsPanelProvider.refresh();
         detailsProvider.refresh();
         await updateStatusBar();
@@ -231,6 +251,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         log.info(`Stopped Dolt server for ${project.name}: ${output || "<no output>"}`);
         await projectManager.refresh();
         dashboardProvider.refresh();
+        needsYouProvider.refresh();
         beadsPanelProvider.refresh();
         detailsProvider.refresh();
         await updateStatusBar();
@@ -337,6 +358,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     projectManager.onDataChanged(() => {
       dashboardProvider.refresh();
+      needsYouProvider.refresh();
       beadsPanelProvider.refresh();
       detailsProvider.refresh();
       graphPanel.refresh();
@@ -346,6 +368,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       beadsPanelProvider.setSelectedBead(null); // Clear selection on project switch
       selection.clear("projectChange");
       dashboardProvider.refreshForProjectChange();
+      needsYouProvider.refreshForProjectChange();
       beadsPanelProvider.refreshForProjectChange();
       detailsProvider.refreshForProjectChange();
       graphPanel.refreshForProjectChange();
@@ -372,6 +395,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       // Refresh all views
       dashboardProvider.refresh();
+      needsYouProvider.refresh();
       beadsPanelProvider.refresh();
       detailsProvider.refresh();
     })

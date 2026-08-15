@@ -67,6 +67,12 @@
         },
         {
           "type": "webview",
+          "id": "beadsNeedsYou",
+          "name": "Needs You",
+          "visibility": "visible"
+        },
+        {
+          "type": "webview",
           "id": "beadsPanel",
           "name": "Issues",
           "visibility": "visible"
@@ -114,6 +120,10 @@
         "title": "Beads: Show Ready Work"
       },
       {
+        "command": "beads.showNeedsYou",
+        "title": "Beads: Show What Needs You"
+      },
+      {
         "command": "beads.findInGraph",
         "title": "Beads: Find in Dependency Graph"
       },
@@ -127,6 +137,11 @@
         {
           "command": "beads.refresh",
           "when": "view == beadsDashboard",
+          "group": "navigation@1"
+        },
+        {
+          "command": "beads.refresh",
+          "when": "view == beadsNeedsYou",
           "group": "navigation@1"
         },
         {

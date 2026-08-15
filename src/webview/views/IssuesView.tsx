@@ -59,6 +59,16 @@ interface IssuesViewProps {
    * panel stays in flat list mode and the tree toggle is disabled.
    */
   graph?: BeadsGraphModel | null;
+  /**
+   * Ids of beads currently waiting on a person, computed by App over the
+   * unfiltered set.
+   *
+   * Passed in rather than derived here because the beads that make a blocker a
+   * person's problem - human gates - are exactly the coordination types this
+   * view never receives. Ids, not beads: the filter seam stays intact, and all
+   * this view does with them is choose a chip.
+   */
+  humanWaitingIds?: readonly string[];
   loading: boolean;
   error: string | null;
   selectedBeadId: string | null;
@@ -87,6 +97,7 @@ const columnHelper = createColumnHelper<Bead>();
 export function IssuesView({
   beads,
   graph,
+  humanWaitingIds,
   loading,
   error,
   selectedBeadId,
@@ -808,6 +819,7 @@ export function IssuesView({
           <LinearList
             beads={beads}
             graph={graph ?? null}
+            humanWaitingIds={humanWaitingIds}
             matched={matched}
             width={tableWidth}
             selectedBeadId={selectedBeadId}

@@ -67,6 +67,8 @@ export interface Bead {
   acceptanceCriteria?: string;
   notes?: string;
   type?: string;
+  /** A gate's await condition (`human`, `timer`, `gh:pr`, ...). Gates only. */
+  awaitType?: string;
   priority?: BeadPriority;
   status: BeadStatus;
   assignee?: string;
@@ -113,6 +115,17 @@ export interface WebviewSettings {
   tooltipHoverDelay: number; // 0 = disabled
 }
 
+/**
+ * What bd said about who needs a person.
+ *
+ * `supported: false` means `bd human list` could not be run and the label on
+ * each bead was used instead - a caveat to show, not an empty inbox.
+ */
+export interface HumanNeededState {
+  ids: string[];
+  supported: boolean;
+}
+
 // Messages from extension to webview
 export type ExtensionMessage =
   | { type: "setViewType"; viewType: string }
@@ -128,6 +141,7 @@ export type ExtensionMessage =
   | { type: "setLoading"; loading: boolean }
   | { type: "setError"; error: string | null }
   | { type: "setSettings"; settings: WebviewSettings }
+  | { type: "setHumanNeeded"; humanNeeded: HumanNeededState }
   | { type: "refresh" }
   | { type: "showToast"; text: string }
   | { type: "applyIssuesPreset"; presetId: string }
@@ -155,6 +169,8 @@ export type WebviewMessage =
   | { type: "copyBeadId"; beadId: string }
   | { type: "openFile"; filePath: string; line?: number }
   | { type: "openIssuesPreset"; presetId: string }
+  | { type: "humanRespond"; beadId: string; text: string }
+  | { type: "humanDismiss"; beadId: string; reason?: string }
   | { type: "openGraph" };
 
 // Human-readable labels

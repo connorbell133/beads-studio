@@ -4,6 +4,7 @@ import {
   createListCommandArgs,
   createShowCommandArgs,
   detectListCapabilities,
+  parseHumanNeeded,
 } from "../BeadsCommandRunner";
 import { MIN_SUPPORTED_BD_VERSION } from "../BeadsBackend";
 import { Logger } from "../../utils/logger";
@@ -192,5 +193,77 @@ describe("createShowCommandArgs", () => {
     // bd rejects unknown flags outright, so the floor must be >= 1.0.5.
     const [major, minor, patch] = MIN_SUPPORTED_BD_VERSION.split(".").map(Number);
     expect(major * 10000 + minor * 100 + patch).toBeGreaterThanOrEqual(10005);
+  });
+});
+
+describe("parseHumanNeeded", () => {
+  it("reads the ids out of a human list payload", () => {
+    expect(
+      parseHumanNeeded([
+        { id: "bd-1", title: "Pick an auth scheme", labels: ["human"] },
+        { id: "bd-2", title: "Approve the schema" },
+      ])
+    ).toEqual(["bd-1", "bd-2"]);
+  });
+
+  it("treats bd's empty-inbox null as an empty list, not a failure", () => {
+    // Verified against bd 1.2.1: `bd human list --json` prints a bare `null`
+    // when nothing is waiting. An empty inbox is the common case, so reading it
+    // as a parse error would mark the surface degraded almost all the time.
+    expect(parseHumanNeeded(null)).toEqual([]);
+  });
+
+  it("drops entries with no usable id", () => {
+    // The ids become set members. One `undefined` would match every bead that
+    // also has no id, which is how a filter turns into a passthrough.
+    expect(parseHumanNeeded([{ id: "bd-1" }, {}, { id: "" }, null, "bd-3"])).toEqual(["bd-1"]);
+  });
+});
+
+describe("BeadsCommandRunner human verbs", () => {
+  it("asks bd for its own human list", async () => {
+    const runner = new StubRunner((args) => {
+      if (args[0] === "version") return { stdout: "bd version 1.2.1", stderr: "" };
+      return { stdout: JSON.stringify([{ id: "bd-7" }]), stderr: "" };
+    });
+
+    const payload = await runner.listHumanNeeded();
+
+    expect(payload).toEqual({ ids: ["bd-7"], supported: true });
+    expect(runner.calls).toContainEqual(["human", "list", "--json"]);
+  });
+
+  it("reports unsupported rather than throwing when bd has no human command", async () => {
+    // The inbox has a correct fallback - the label is already on every bead -
+    // so an older bd costs the user a caveat, never the surface.
+    const runner = new StubRunner((args) => {
+      if (args[0] === "version") return { stdout: "bd version 1.0.5", stderr: "" };
+      throw new Error('unknown command "human" for "bd"');
+    });
+
+    expect(await runner.listHumanNeeded()).toEqual({ ids: [], supported: false });
+  });
+
+  it("responds and dismisses through bd's own verbs", async () => {
+    const runner = new StubRunner((args) => {
+      if (args[0] === "version") return { stdout: "bd version 1.2.1", stderr: "" };
+      // bd prints prose for these even with --json, which is why neither call
+      // parses its output.
+      return { stdout: "Bead bd-1 closed with response.", stderr: "" };
+    });
+
+    await runner.humanRespond({ id: "bd-1", response: "Use OAuth2" });
+    await runner.humanDismiss({ id: "bd-2", reason: "No longer applicable" });
+    await runner.humanDismiss({ id: "bd-3" });
+
+    expect(runner.calls).toContainEqual(["human", "respond", "bd-1", "--response", "Use OAuth2"]);
+    expect(runner.calls).toContainEqual([
+      "human",
+      "dismiss",
+      "bd-2",
+      "--reason",
+      "No longer applicable",
+    ]);
+    expect(runner.calls).toContainEqual(["human", "dismiss", "bd-3"]);
   });
 });
