@@ -12,6 +12,7 @@ import { DashboardViewProvider } from "./providers/DashboardViewProvider";
 import { BeadsPanelViewProvider } from "./providers/BeadsPanelViewProvider";
 import { BeadDetailsViewProvider } from "./providers/BeadDetailsViewProvider";
 import { BeadsGraphPanel } from "./providers/BeadsGraphPanel";
+import { BeadsPlanIntakePanel } from "./providers/BeadsPlanIntakePanel";
 import { BeadsSelection } from "./providers/BeadsSelection";
 import { BeadsDiagnostics } from "./providers/BeadsDiagnostics";
 import { BeadsWebviewHost } from "./providers/BeadsWebviewHost";
@@ -23,6 +24,7 @@ let dashboardProvider: DashboardViewProvider;
 let beadsPanelProvider: BeadsPanelViewProvider;
 let detailsProvider: BeadDetailsViewProvider;
 let graphPanel: BeadsGraphPanel;
+let planIntakePanel: BeadsPlanIntakePanel;
 let selection: BeadsSelection;
 let diagnostics: BeadsDiagnostics;
 let statusBar: vscode.StatusBarItem;
@@ -80,6 +82,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   graphPanel = new BeadsGraphPanel(context.extensionUri, projectManager, log);
   context.subscriptions.push({ dispose: () => graphPanel.dispose() });
 
+  // The extension's only writing surface. Also an editor tab, for the same
+  // reason the graph is: what it shows is a DAG.
+  planIntakePanel = new BeadsPlanIntakePanel(context.extensionUri, projectManager, log);
+  context.subscriptions.push({ dispose: () => planIntakePanel.dispose() });
+
   // One selected bead across every surface. Six surfaces each holding their own
   // selection would be six places to lose your place.
   selection = new BeadsSelection();
@@ -132,6 +139,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand("beads.openGraph", (beadId?: string) => {
       graphPanel.show(beadId ?? selection.selected ?? undefined);
+    }),
+
+    vscode.commands.registerCommand("beads.newEpic", () => {
+      if (!projectManager.getActiveProject()) {
+        vscode.window.showWarningMessage("No active Beads project");
+        return;
+      }
+      planIntakePanel.show();
     }),
 
     vscode.commands.registerCommand("beads.showReady", () => {
@@ -349,6 +364,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       beadsPanelProvider.refreshForProjectChange();
       detailsProvider.refreshForProjectChange();
       graphPanel.refreshForProjectChange();
+      // Keeps the composer's project context current. Its draft is deliberately
+      // left alone: switching projects is not a reason to throw away typing.
+      planIntakePanel.refreshForProjectChange();
       updateStatusBar();
     }),
 

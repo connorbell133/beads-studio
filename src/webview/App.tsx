@@ -13,6 +13,7 @@ import {
   BeadsSummary,
   COORDINATION_TYPES,
   ExtensionMessage,
+  PlanCommitState,
   WebviewSettings,
   vscode,
 } from "./types";
@@ -20,6 +21,7 @@ import { DashboardView } from "./views/DashboardView";
 import { IssuesView } from "./views/IssuesView";
 import { DetailsView } from "./views/DetailsView";
 import { GraphView } from "./views/GraphView";
+import { PlanIntakeView } from "./views/PlanIntakeView";
 import { Loading } from "./common/Loading";
 import { NoProject } from "./common/NoProject";
 import { ToastProvider, triggerToast } from "./common/Toast";
@@ -45,6 +47,8 @@ interface AppState {
   loading: boolean;
   error: string | null;
   settings: WebviewSettings;
+  /** Where the plan composer's commit is. Only the plan intake tab reads it. */
+  planCommit: PlanCommitState;
 }
 
 const initialState: AppState = {
@@ -64,6 +68,7 @@ const initialState: AppState = {
   loading: true,
   error: null,
   settings: { renderMarkdown: true, userId: "", tooltipHoverDelay: 1000 },
+  planCommit: { phase: "idle" },
 };
 
 export function App(): React.ReactElement {
@@ -123,6 +128,9 @@ export function App(): React.ReactElement {
         break;
       case "setSettings":
         setState((prev) => ({ ...prev, settings: message.settings }));
+        break;
+      case "setPlanCommitState":
+        setState((prev) => ({ ...prev, planCommit: message.state }));
         break;
       case "refresh":
         vscode.postMessage({ type: "refresh" });
@@ -244,6 +252,15 @@ export function App(): React.ReactElement {
             }
             onRetry={() => vscode.postMessage({ type: "refresh" })}
             onRefresh={() => vscode.postMessage({ type: "refresh" })}
+          />
+        );
+
+      case "beadsPlanIntake":
+        return (
+          <PlanIntakeView
+            commitState={state.planCommit}
+            onCommit={(draft) => vscode.postMessage({ type: "commitPlanDraft", draft })}
+            onOpenBead={(beadId) => vscode.postMessage({ type: "openBeadDetails", beadId })}
           />
         );
 

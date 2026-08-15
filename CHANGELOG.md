@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- "Beads: New Epic from Plan" composes an epic and its dependency-ordered tasks, previews the resulting DAG before anything is written, and creates the whole plan through `bd batch` as one transaction
+
 ### Fixed
 
 - Tree mode heads an epic's own group even before it has any tasks, instead of filing it under "No epic"

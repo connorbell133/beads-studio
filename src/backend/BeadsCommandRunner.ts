@@ -1,4 +1,7 @@
 import { execFile } from "child_process";
+import * as fs from "fs/promises";
+import * as os from "os";
+import * as path from "path";
 import * as util from "util";
 import { Logger } from "../utils/logger";
 import {
@@ -13,6 +16,8 @@ import {
   MIN_SUPPORTED_BD_VERSION,
   UpdateIssueArgs,
 } from "./BeadsBackend";
+import { PlanCommitResult, commitPlanDraft } from "./plan-batch";
+import { PlanDraft } from "./plan-draft";
 import { edgesFromIssues } from "./types";
 
 const execFileAsync = util.promisify(execFile);
@@ -247,6 +252,34 @@ export class BeadsCommandRunner implements BeadsBackend {
 
     const result = await this.runJson(cmdArgs);
     return this.pickSingleIssue(result, "create");
+  }
+
+  async createPlanEpic(draft: PlanDraft): Promise<PlanCommitResult> {
+    return commitPlanDraft(draft, (script) => this.runBatchScript(script));
+  }
+
+  /**
+   * Runs one `bd batch` script.
+   *
+   * Via a temp file rather than stdin: `execFile` is the process boundary the
+   * rest of this class - and its tests - go through, and a file keeps the batch
+   * on that one seam instead of adding a second, differently-behaved spawn path
+   * just to write a few hundred bytes.
+   *
+   * The file lands in the OS temp dir, never under `.beads/`, which the
+   * extension does not touch.
+   */
+  private async runBatchScript(script: string): Promise<unknown> {
+    const file = path.join(
+      os.tmpdir(),
+      `beads-batch-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.txt`
+    );
+    await fs.writeFile(file, script, "utf8");
+    try {
+      return await this.runJson(["batch", "-f", file, "--json"]);
+    } finally {
+      await fs.unlink(file).catch(() => undefined);
+    }
   }
 
   async update(args: UpdateIssueArgs): Promise<BeadsIssue> {

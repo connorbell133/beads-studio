@@ -1,0 +1,211 @@
+/* Plan intake - composing an epic beside its derived DAG.
+ *
+ * Two columns while there is room for a graph worth reading, one below that.
+ * The breakpoint is where the canvas stops being wide enough to show a chain
+ * rather than a column, not a device width. */
+
+.plan-intake {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.plan-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.plan-title {
+  font-size: 1.3em;
+  font-weight: 600;
+}
+
+.plan-subtitle {
+  color: var(--vscode-descriptionForeground);
+  max-width: 70ch;
+  line-height: 1.5;
+}
+
+.plan-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--spacing-xl);
+  align-items: start;
+}
+
+@media (max-width: 1000px) {
+  .plan-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.plan-composer,
+.plan-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+
+.plan-section-title {
+  font-size: 0.85em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--vscode-descriptionForeground);
+  margin-top: var(--spacing-sm);
+}
+
+.plan-node-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) 0;
+}
+
+.plan-node-row.invalid .plan-node-title {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+.plan-node-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.plan-task-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.plan-task {
+  border-left: 2px solid var(--vscode-panel-border);
+  padding-left: var(--spacing-sm);
+}
+
+.plan-blockers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding-left: var(--spacing-xs);
+}
+
+.plan-blockers-label,
+.plan-blockers-empty {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.plan-blocker-add {
+  background: none;
+  border: 1px dashed var(--vscode-panel-border);
+  border-radius: var(--border-radius);
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 0.85em;
+  padding: 1px var(--spacing-xs);
+}
+
+.plan-blocker-add:hover {
+  color: var(--vscode-foreground);
+  border-color: var(--vscode-focusBorder);
+}
+
+.plan-icon-button {
+  background: none;
+  border: none;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 1.1em;
+  line-height: 1;
+  padding: 0 var(--spacing-xs);
+}
+
+.plan-icon-button:hover {
+  color: var(--vscode-errorForeground);
+}
+
+.plan-preview-summary {
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.plan-preview-canvas {
+  min-height: 320px;
+}
+
+.plan-issues {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.plan-issue {
+  font-size: 0.9em;
+  padding-left: var(--spacing-sm);
+  border-left: 2px solid transparent;
+}
+
+.plan-issue.error {
+  border-left-color: var(--vscode-errorForeground);
+  color: var(--vscode-errorForeground);
+}
+
+.plan-issue.warning {
+  border-left-color: var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground));
+  color: var(--vscode-descriptionForeground);
+}
+
+.plan-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  border-top: 1px solid var(--vscode-panel-border);
+  padding-top: var(--spacing-md);
+}
+
+.plan-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: center;
+  margin-top: var(--spacing-md);
+}
+
+.plan-button {
+  align-self: flex-start;
+  background: var(--vscode-button-secondaryBackground);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--border-radius);
+  color: var(--vscode-button-secondaryForeground);
+  cursor: pointer;
+  font-size: 1em;
+  padding: var(--spacing-xs) var(--spacing-md);
+}
+
+.plan-button.primary {
+  background: var(--vscode-button-background);
+  border-color: transparent;
+  color: var(--vscode-button-foreground);
+}
+
+.plan-button:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.plan-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.plan-failure-orphans {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+  max-width: 80ch;
+}
