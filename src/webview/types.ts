@@ -7,10 +7,14 @@
 // The graph model is imported rather than mirrored. src/graph has no vscode
 // dependency, so both sides can share one definition - and a mirrored copy is
 // exactly how the dependency shape drifted out of sync in the first place.
+import type { DriftRefOption } from "../backend/types";
+import type { DriftReport } from "../graph/drift";
 import type { BeadsGraphModel } from "../graph/types";
 
 export type { BeadsGraphModel, BeadGraphNode } from "../graph/types";
 export { COORDINATION_TYPES } from "../graph/types";
+export type { DriftReport, DriftKind, BeadDrift } from "../graph/drift";
+export type { DriftRefOption } from "../backend/types";
 
 // Re-export types that are shared between extension and webview.
 //
@@ -124,6 +128,8 @@ export type ExtensionMessage =
   | { type: "toggleTreeMode" }
   | { type: "setSummary"; summary: BeadsSummary }
   | { type: "setGraph"; graph: BeadsGraphModel }
+  | { type: "setDriftRefs"; refs: DriftRefOption[] }
+  | { type: "setDrift"; drift: DriftReport | null; pending?: boolean; error?: string | null }
   | { type: "setProjects"; projects: BeadsProject[] }
   | { type: "setLoading"; loading: boolean }
   | { type: "setError"; error: string | null }
@@ -155,6 +161,8 @@ export type WebviewMessage =
   | { type: "copyBeadId"; beadId: string }
   | { type: "openFile"; filePath: string; line?: number }
   | { type: "openIssuesPreset"; presetId: string }
+  | { type: "setDriftRef"; presetId?: string; commit?: string }
+  | { type: "requestDriftRefs" }
   | { type: "openGraph" };
 
 // Human-readable labels

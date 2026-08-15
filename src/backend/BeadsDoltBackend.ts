@@ -14,6 +14,7 @@ import {
   UpdateIssueArgs,
 } from "./BeadsBackend";
 import { BeadsCommandRunner } from "./BeadsCommandRunner";
+import type { DriftCommit, RawDiffEntry } from "../graph/drift";
 import { BeadEdge } from "./types";
 
 const execFileAsync = util.promisify(execFile);
@@ -344,6 +345,23 @@ export class BeadsDoltBackend implements BeadsBackend {
         comments,
       } satisfies BeadsIssue;
     });
+  }
+
+  /**
+   * Version-control reads go to the CLI even here.
+   *
+   * This backend reads issue state over SQL because that is the hot path, but
+   * history is not: `bd diff` already computes the row-level comparison Dolt's
+   * own diff tables would need reassembling by hand, and reusing it keeps one
+   * definition of "what changed" across both backends rather than two that can
+   * disagree.
+   */
+  async diffRefs(fromRef: string, toRef?: string): Promise<RawDiffEntry[]> {
+    return this.cli.diffRefs(fromRef, toRef);
+  }
+
+  async recentCommits(limit?: number): Promise<DriftCommit[]> {
+    return this.cli.recentCommits(limit);
   }
 
   async create(args: CreateIssueArgs): Promise<BeadsIssue> {

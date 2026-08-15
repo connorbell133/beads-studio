@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Plan drift lens: compare the graph against a point in history — since yesterday, last week, or one exact commit — and see what has been added, closed, reopened, rescoped or reprioritized since. Annotates every lens, not just its own
+
 ### Fixed
 
 - Tree mode heads an epic's own group even before it has any tasks, instead of filing it under "No epic"

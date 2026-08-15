@@ -1,3 +1,4 @@
+import type { DriftReport } from "../graph/drift";
 import type { BeadsGraphModel } from "../graph/types";
 
 /**
@@ -349,6 +350,13 @@ export type ExtensionToWebviewMessage =
   | { type: "setPulse"; events: { id: string; at: number }[] }
   | { type: "setSummary"; summary: BeadsSummary | null }
   | { type: "setGraph"; graph: BeadsGraphModel }
+  /** The comparison points the drift picker can offer, newest first. */
+  | { type: "setDriftRefs"; refs: DriftRefOption[] }
+  /**
+   * The running comparison, or `null` for "no comparison point set". `pending`
+   * is the in-flight state: the picker has been used and bd has not answered.
+   */
+  | { type: "setDrift"; drift: DriftReport | null; pending?: boolean; error?: string | null }
   | { type: "setProjects"; projects: BeadsProject[] }
   | { type: "setLoading"; loading: boolean }
   | { type: "setError"; error: string | null }
@@ -377,7 +385,24 @@ export type WebviewToExtensionMessage =
   | { type: "copyBeadId"; beadId: string }
   | { type: "openFile"; filePath: string; line?: number }
   | { type: "openIssuesPreset"; presetId: string }
+  /**
+   * Set, change, or clear the drift comparison point.
+   *
+   * `presetId` names a `DRIFT_PRESETS` entry and is resolved to a real commit
+   * by the extension - `bd diff` takes hashes and branches only, never dates.
+   * `commit` pins one exactly. Both absent clears the comparison.
+   */
+  | { type: "setDriftRef"; presetId?: string; commit?: string }
+  /** Ask for the commit listing that fills the picker. */
+  | { type: "requestDriftRefs" }
   | { type: "openGraph" };
+
+/** One entry in the drift picker: a real commit, described in readable terms. */
+export interface DriftRefOption {
+  hash: string;
+  /** ISO timestamp of the commit. */
+  at: string;
+}
 
 // CLI command result
 export interface CommandResult<T = unknown> {

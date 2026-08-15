@@ -4,6 +4,7 @@ import {
   createListCommandArgs,
   createShowCommandArgs,
   detectListCapabilities,
+  unwrapBdError,
 } from "../BeadsCommandRunner";
 import { MIN_SUPPORTED_BD_VERSION } from "../BeadsBackend";
 import { Logger } from "../../utils/logger";
@@ -192,5 +193,156 @@ describe("createShowCommandArgs", () => {
     // bd rejects unknown flags outright, so the floor must be >= 1.0.5.
     const [major, minor, patch] = MIN_SUPPORTED_BD_VERSION.split(".").map(Number);
     expect(major * 10000 + minor * 100 + patch).toBeGreaterThanOrEqual(10005);
+  });
+});
+
+/**
+ * The version-control reads behind the plan-drift lens.
+ *
+ * These assert the commands as bd 1.2.1 actually accepts them, which is the
+ * part that cannot be inferred from the types: `bd diff` takes two positional
+ * refs and rejects relative ones, and `bd history` takes exactly one id.
+ */
+describe("BeadsCommandRunner drift reads", () => {
+  /** Two commits, in `bd history --json`'s own casing. */
+  const HISTORY = [
+    { CommitHash: "aaaa1111", Committer: "beads", CommitDate: "2026-08-14T10:17:29.334-07:00" },
+    { CommitHash: "bbbb2222", Committer: "beads", CommitDate: "2026-08-14T10:12:43.629-07:00" },
+  ];
+
+  function driftRunner(overrides: { diff?: unknown; history?: unknown; issues?: unknown[] } = {}) {
+    return new StubRunner((args) => {
+      if (args[0] === "version") return { stdout: "bd version 1.2.1", stderr: "" };
+      if (args.includes("--help")) return { stdout: HELP_WITH_BOTH_FLAGS, stderr: "" };
+      if (args[0] === "diff") return { stdout: JSON.stringify(overrides.diff ?? []), stderr: "" };
+      if (args[0] === "history") {
+        return { stdout: JSON.stringify(overrides.history ?? HISTORY), stderr: "" };
+      }
+      return { stdout: JSON.stringify(overrides.issues ?? []), stderr: "" };
+    });
+  }
+
+  it("diffs two positional refs, defaulting the second to HEAD", async () => {
+    const runner = driftRunner();
+
+    await runner.diffRefs("abc123");
+
+    expect(runner.calls).toContainEqual(["diff", "abc123", "HEAD", "--json"]);
+  });
+
+  it("passes an explicit target ref through", async () => {
+    const runner = driftRunner();
+
+    await runner.diffRefs("abc123", "def456");
+
+    expect(runner.calls).toContainEqual(["diff", "abc123", "def456", "--json"]);
+  });
+
+  it("hands back the rows bd printed", async () => {
+    const runner = driftRunner({
+      diff: [{ IssueID: "bd-1", DiffType: "added", OldValue: null, NewValue: { id: "bd-1" } }],
+    });
+
+    const entries = await runner.diffRefs("abc123");
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].IssueID).toBe("bd-1");
+  });
+
+  it("surfaces bd's error object as a thrown error, never as an empty diff", async () => {
+    const runner = driftRunner({ diff: { error: "invalid ref format: HEAD~5" } });
+
+    await expect(runner.diffRefs("HEAD~5")).rejects.toThrow(/invalid ref format/);
+  });
+
+  it("reports bd's sentence, not the JSON envelope it failed inside", () => {
+    // bd exits 1 with this on stdout and nothing on stderr, so the raw failure
+    // message the generic runner throws is the whole blob.
+    expect(
+      unwrapBdError(
+        'Command failed\n{\n  "error": "failed to get diff: invalid ref format: HEAD~5",\n  "schema_version": 1\n}'
+      )
+    ).toBe("failed to get diff: invalid ref format: HEAD~5");
+
+    expect(unwrapBdError("bd: command not found")).toBe("bd: command not found");
+    expect(unwrapBdError("{ not json")).toBe("{ not json");
+    expect(unwrapBdError('{"schema_version":1}')).toBe('{"schema_version":1}');
+  });
+
+  it("reads history one bead at a time - bd history takes exactly one id", async () => {
+    const runner = driftRunner({ issues: [{ id: "bd-1", updated_at: "2026-08-14T10:00:00Z" }] });
+
+    await runner.recentCommits();
+
+    const historyCalls = runner.calls.filter((args) => args[0] === "history");
+    expect(historyCalls).toHaveLength(1);
+    expect(historyCalls[0][1]).toBe("bd-1");
+    expect(historyCalls[0]).toContain("--json");
+  });
+
+  it("samples the most recently touched beads, and bounds how many it spawns", async () => {
+    const issues = Array.from({ length: 40 }, (_, index) => ({
+      id: `bd-${index}`,
+      updated_at: `2026-08-${String(index + 1).padStart(2, "0")}T10:00:00Z`,
+    }));
+    const runner = driftRunner({ issues });
+
+    await runner.recentCommits();
+
+    const historyCalls = runner.calls.filter((args) => args[0] === "history");
+    expect(historyCalls.length).toBeLessThanOrEqual(12);
+    // Newest first: bd-39 has the latest updated_at.
+    expect(historyCalls[0][1]).toBe("bd-39");
+  });
+
+  it("unions and de-duplicates the commits the sampled beads share", async () => {
+    const runner = driftRunner({
+      issues: [
+        { id: "bd-1", updated_at: "2026-08-14T10:00:00Z" },
+        { id: "bd-2", updated_at: "2026-08-13T10:00:00Z" },
+      ],
+    });
+
+    const commits = await runner.recentCommits();
+
+    // Both beads report the same two commits; the listing holds two, newest first.
+    expect(commits.map((commit) => commit.hash)).toEqual(["aaaa1111", "bbbb2222"]);
+  });
+
+  it("drops history rows with no hash or an unusable date", async () => {
+    const runner = driftRunner({
+      issues: [{ id: "bd-1", updated_at: "2026-08-14T10:00:00Z" }],
+      history: [
+        { CommitHash: "", CommitDate: "2026-08-14T10:00:00Z" },
+        { CommitHash: "cccc3333", CommitDate: "not a date" },
+        { CommitHash: "dddd4444", CommitDate: "2026-08-14T10:00:00Z" },
+      ],
+    });
+
+    const commits = await runner.recentCommits();
+
+    expect(commits).toEqual([{ hash: "dddd4444", at: "2026-08-14T10:00:00Z" }]);
+  });
+
+  it("keeps the picker usable when one bead's history cannot be read", async () => {
+    const runner = new StubRunner((args) => {
+      if (args[0] === "version") return { stdout: "bd version 1.2.1", stderr: "" };
+      if (args.includes("--help")) return { stdout: HELP_WITH_BOTH_FLAGS, stderr: "" };
+      if (args[0] === "history") {
+        if (args[1] === "bd-broken") throw new Error("issue not found");
+        return { stdout: JSON.stringify(HISTORY), stderr: "" };
+      }
+      return {
+        stdout: JSON.stringify([
+          { id: "bd-broken", updated_at: "2026-08-14T11:00:00Z" },
+          { id: "bd-ok", updated_at: "2026-08-14T10:00:00Z" },
+        ]),
+        stderr: "",
+      };
+    });
+
+    const commits = await runner.recentCommits();
+
+    expect(commits.map((commit) => commit.hash)).toEqual(["aaaa1111", "bbbb2222"]);
   });
 });

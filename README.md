@@ -34,7 +34,7 @@ If you run coding agents on Beads, this is the window you've been missing.
 
 ### 🕸️ Dependency graph
 
-The headline act. The full DAG in an editor tab, with **lenses** for scoping: the subtree converging on one epic, the ready frontier, or a bead's blast radius. Ready work glows, blocked chains trace on hover, cycles land in the Problems panel, and every epic gets a critical path. Scales past 150 nodes with density auto-collapse, find-in-graph, and edge-following keyboard traversal.
+The headline act. The full DAG in an editor tab, with **lenses** for scoping: the subtree converging on one epic, the ready frontier, a bead's blast radius, or **plan drift** — what the roadmap looked like yesterday, last week, or at any commit, with everything that has moved since marked in place. Ready work glows, blocked chains trace on hover, cycles land in the Problems panel, and every epic gets a critical path. Scales past 150 nodes with density auto-collapse, find-in-graph, and edge-following keyboard traversal.
 
 ### 📋 Issues, Linear-style
 

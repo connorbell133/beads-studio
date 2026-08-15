@@ -2916,6 +2916,28 @@ textarea {
   color: var(--vscode-testing-iconPassed);
 }
 
+/* Plan drift, in the accessible reading of the graph. The word is the signal;
+   the border only groups the kinds into "moved forward", "moved backward", and
+   "changed shape", so the chip is still readable with no colour at all. */
+.graph-chip.drift {
+  border-style: dashed;
+}
+
+.graph-chip.drift.added,
+.graph-chip.drift.closed {
+  border-color: var(--vscode-charts-green);
+}
+
+.graph-chip.drift.reopened,
+.graph-chip.drift.removed {
+  border-color: var(--vscode-charts-yellow);
+}
+
+.graph-chip.drift.rescoped,
+.graph-chip.drift.reprioritized {
+  border-color: var(--vscode-charts-blue);
+}
+
 /* The blocker chain reads inline as a breadcrumb, not as a red badge that
    hides which bead is actually in the way. */
 .graph-row-blockers {

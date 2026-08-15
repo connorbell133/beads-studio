@@ -19,7 +19,9 @@ import {
   LENS_DESCRIPTIONS,
   LENS_LABELS,
 } from "../../graph/lens";
+import type { DriftReport, DriftRefOption } from "../types";
 import { Dropdown, DropdownItem } from "./Dropdown";
+import { DriftChoice, DriftPicker } from "./DriftPicker";
 
 export interface GraphToolbarProps {
   lens: GraphLens;
@@ -37,6 +39,13 @@ export interface GraphToolbarProps {
   onShowCompletedChange: (showCompleted: boolean) => void;
   /** Finished epics the default filter is holding back. 0 hides the toggle. */
   hiddenEpicCount: number;
+
+  /** The running plan-drift comparison. Null means none is set. */
+  drift: DriftReport | null;
+  driftPending: boolean;
+  driftRefs: DriftRefOption[];
+  onDriftRefChange: (choice: DriftChoice) => void;
+  onRequestDriftRefs: () => void;
 
   query: string;
   onQueryChange: (query: string) => void;
@@ -76,6 +85,11 @@ export function GraphToolbar({
   showCompleted,
   onShowCompletedChange,
   hiddenEpicCount,
+  drift,
+  driftPending,
+  driftRefs,
+  onDriftRefChange,
+  onRequestDriftRefs,
   query,
   onQueryChange,
   onQueryKeyDown,
@@ -175,6 +189,20 @@ export function GraphToolbar({
             </button>
           )}
         </Dropdown>
+      )}
+
+      {/* Which moment, on the same terms as which epic. Stays on the row while
+          a comparison is running whatever the lens, because drift annotates
+          every lens - so the control that turns it off is never somewhere the
+          user has to switch lenses to reach. */}
+      {(lens === "drift" || drift !== null) && (
+        <DriftPicker
+          drift={drift}
+          pending={driftPending}
+          refs={driftRefs}
+          onChange={onDriftRefChange}
+          onOpen={onRequestDriftRefs}
+        />
       )}
 
       {children}

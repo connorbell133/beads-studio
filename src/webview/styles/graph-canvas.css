@@ -438,6 +438,145 @@
   opacity: 0.12;
 }
 
+/* Plan drift --------------------------------------------------------------- */
+
+/* The picker reads like the epic picker, because it does the same job for a
+   different axis: which slice of history rather than which slice of the tree. */
+.graph-canvas-drift-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  max-width: 34ch;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 1px dashed var(--vscode-panel-border);
+  border-radius: var(--border-radius);
+  font: inherit;
+  cursor: pointer;
+}
+
+.graph-canvas-drift-trigger:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.graph-canvas-drift-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-canvas-drift-picker .dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  width: 100%;
+}
+
+.graph-canvas-drift-option {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-canvas-drift-hash {
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.9em;
+  flex: none;
+}
+
+/* Separates the exact-commit list from the durations above it, so the two
+   halves of the menu do not read as one flat list of equal choices. */
+.graph-canvas-drift-heading {
+  margin: var(--spacing-xs) 0 0;
+  padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-xs);
+  border-top: 1px solid var(--vscode-menu-separatorBackground, var(--vscode-widget-border));
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+.graph-canvas-drift-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin: 0 0 var(--spacing-sm);
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.92em;
+}
+
+.graph-canvas-drift-notice.error {
+  color: var(--vscode-errorForeground);
+}
+
+.graph-canvas-drift-since {
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+.graph-canvas-drift-removed {
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+.graph-canvas-drift-legend {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-left: auto;
+}
+
+/* The legend keys borrow the node badge's own outline, so the key and the thing
+   it explains are visibly the same object. */
+.graph-canvas-drift-key {
+  padding: 0 var(--spacing-sm);
+  border: 1px dashed var(--vscode-panel-border);
+  border-radius: 10px;
+  font-size: 10px;
+  cursor: help;
+}
+
+.graph-canvas-drift-key.added,
+.graph-canvas-drift-key.closed {
+  border-color: var(--vscode-charts-green);
+}
+
+.graph-canvas-drift-key.reopened,
+.graph-canvas-drift-key.removed {
+  border-color: var(--vscode-charts-yellow);
+}
+
+.graph-canvas-drift-key.rescoped,
+.graph-canvas-drift-key.reprioritized {
+  border-color: var(--vscode-charts-blue);
+}
+
+/* A drifted node, on the canvas.
+ *
+ * A dashed outline plus a word, never a fill: the body's fill already carries
+ * readiness, and repainting it for drift would make a bead that changed
+ * overnight lie about whether it is available to pick up.
+ *
+ * A bead in a dependency cycle keeps the cycle's wider dash: both want the
+ * outline, and a cycle is the more urgent of the two. The word in the corner
+ * still says the bead drifted, so nothing is lost by yielding the stroke. */
+.graph-canvas-node.drifted:not(.in-cycle) .graph-canvas-node-body {
+  stroke-dasharray: 3 2;
+  stroke-opacity: 1;
+}
+
+.graph-canvas-node-drift {
+  fill: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* Epic picker -------------------------------------------------------------- */
 
 /* Sits beside the lens tabs while the epic lens is active. The trigger reads
