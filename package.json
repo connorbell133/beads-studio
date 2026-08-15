@@ -162,6 +162,11 @@
           "default": 3000,
           "description": "Polling interval in milliseconds for Dolt change detection (0 to disable)"
         },
+        "beads.liveEvents": {
+          "type": "boolean",
+          "default": true,
+          "description": "Subscribe to `bd events tail --follow` and refresh views when beads actually change, instead of only on a timer. Requires the project's events journal (`bd config set events-journal true`); falls back to polling automatically when it is off or unavailable."
+        },
         "beads.renderMarkdown": {
           "type": "boolean",
           "default": true,
