@@ -14,6 +14,7 @@ import { BeadDetailsViewProvider } from "./providers/BeadDetailsViewProvider";
 import { BeadsGraphPanel } from "./providers/BeadsGraphPanel";
 import { BeadsSelection } from "./providers/BeadsSelection";
 import { BeadsDiagnostics } from "./providers/BeadsDiagnostics";
+import { BeadsHygiene, BeadsHygieneActions } from "./providers/BeadsHygiene";
 import { BeadsWebviewHost } from "./providers/BeadsWebviewHost";
 import { createLogger, Logger } from "./utils/logger";
 
@@ -25,6 +26,7 @@ let detailsProvider: BeadDetailsViewProvider;
 let graphPanel: BeadsGraphPanel;
 let selection: BeadsSelection;
 let diagnostics: BeadsDiagnostics;
+let hygiene: BeadsHygiene;
 let statusBar: vscode.StatusBarItem;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -85,12 +87,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   selection = new BeadsSelection();
   context.subscriptions.push(selection);
 
-  // A dependency cycle is a data defect the Problems panel can carry. Before
-  // this it rendered as an infinitely-expanding tree and nothing else.
+  // Graph and hygiene defects are data defects the Problems panel can carry.
+  // A cycle used to render as an infinitely-expanding tree and nothing else.
   diagnostics = new BeadsDiagnostics(log);
   context.subscriptions.push(diagnostics);
   context.subscriptions.push(
     BeadsWebviewHost.observeGraph((model, project) => diagnostics.update(model, project))
+  );
+
+  // The rules that shell out to bd run only when asked - see BeadsHygiene for
+  // why a derive-time run is not affordable.
+  hygiene = new BeadsHygiene(projectManager, diagnostics, log);
+  context.subscriptions.push(hygiene);
+  context.subscriptions.push(
+    vscode.languages.registerCodeActionsProvider(
+      { scheme: "file" },
+      new BeadsHygieneActions(diagnostics),
+      BeadsHygieneActions.metadata
+    )
   );
   context.subscriptions.push(
     selection.onDidChange(({ beadId, origin }) => {
@@ -145,6 +159,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand("beads.toggleTreeMode", () => {
       beadsPanelProvider.toggleTreeMode();
+    }),
+
+    vscode.commands.registerCommand("beads.runHygiene", async () => {
+      await hygiene.run();
+    }),
+
+    // Also the target of every hygiene lightbulb, which passes the fix key.
+    vscode.commands.registerCommand("beads.applyHygieneFix", async (key?: string) => {
+      await hygiene.applyFix(key);
     }),
 
     vscode.commands.registerCommand("beads.openBeadDetails", async (beadId?: string) => {
@@ -306,6 +329,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       items.push(
         { label: "$(refresh) Refresh", description: "Refresh Beads data" },
+        { label: "$(beaker) Check Hygiene", description: "Run the bd hygiene rules into the Problems panel" },
         { label: "$(server-process) Dolt Status", description: "Log Dolt server status" },
         { label: "$(play) Start Dolt", description: "Start the Dolt server for this project" },
         { label: "$(debug-stop) Stop Dolt", description: "Stop the Dolt server for this project" },
@@ -320,6 +344,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (selected) {
         if (selected.label.includes("Refresh")) {
           vscode.commands.executeCommand("beads.refresh");
+        } else if (selected.label.includes("Check Hygiene")) {
+          vscode.commands.executeCommand("beads.runHygiene");
         } else if (selected.label.includes("Dolt Status")) {
           vscode.commands.executeCommand("beads.showDoltStatus");
         } else if (selected.label.includes("Start Dolt")) {

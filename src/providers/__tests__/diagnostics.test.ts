@@ -18,7 +18,10 @@ import {
   BeadsDiagnostics,
   CYCLE_DIAGNOSTIC_CODE,
   DIAGNOSTIC_SOURCE,
+  diagnosticKey,
 } from "../BeadsDiagnostics";
+import { BeadsHygieneActions, describeFix } from "../BeadsHygiene";
+import { HygieneFinding } from "../../hygiene/types";
 
 function createDiagnostics(): BeadsDiagnostics {
   const logger = new Logger(
@@ -52,7 +55,7 @@ function model(overrides: Partial<BeadsGraphModel> = {}): BeadsGraphModel {
     nodes: {},
     ready: [],
     blocked: [],
-    orphans: [],
+    parentless: [],
     cycles: [],
     hasCycle: false,
     complete: true,
@@ -301,5 +304,205 @@ describe("BeadsDiagnostics", () => {
 
     expect(() => diagnostics.dispose()).not.toThrow();
     expect(() => diagnostics.clear()).not.toThrow();
+  });
+});
+
+/** A graph where one epic owns one task, so the loose-work rule is armed. */
+function hierarchy(loose: string[]): BeadsGraphModel {
+  return deriveGraph(
+    [
+      { id: "bd-epic", status: "open", issue_type: "epic" },
+      { id: "bd-child", status: "open", issue_type: "task", parent: "bd-epic" },
+      ...loose.map((id) => ({ id, status: "open", issue_type: "task" })),
+    ],
+    []
+  );
+}
+
+function finding(overrides: Partial<HygieneFinding> = {}): HygieneFinding {
+  return {
+    code: "stale-bead",
+    severity: "info",
+    message: "bd-old has not been updated in 45 days.",
+    beadIds: ["bd-old"],
+    ...overrides,
+  };
+}
+
+describe("BeadsDiagnostics as a rule engine", () => {
+  beforeEach(() => {
+    createdDiagnosticCollections.length = 0;
+  });
+
+  it("publishes findings from more than one local rule at once", () => {
+    const diagnostics = createDiagnostics();
+    const graph = hierarchy(["bd-loose"]);
+    graph.cycles = [["bd-a", "bd-b"]];
+    graph.hasCycle = true;
+
+    diagnostics.update(graph, project());
+
+    const codes = published("/repo/.beads").map((d) => d.code);
+    expect(codes).toContain(CYCLE_DIAGNOSTIC_CODE);
+    expect(codes).toContain("loose-work");
+  });
+
+  it("maps each rule's severity onto the panel rather than flagging everything as an error", () => {
+    const diagnostics = createDiagnostics();
+    const graph = hierarchy(["bd-loose"]);
+    graph.cycles = [["bd-a", "bd-b"]];
+    graph.hasCycle = true;
+
+    diagnostics.update(graph, project());
+    diagnostics.setShellFindings([finding({ severity: "warning" })], project());
+
+    const bySeverity = new Map(
+      published("/repo/.beads").map((d) => [d.code, d.severity])
+    );
+    expect(bySeverity.get(CYCLE_DIAGNOSTIC_CODE)).toBe(vscode.DiagnosticSeverity.Error);
+    expect(bySeverity.get("loose-work")).toBe(vscode.DiagnosticSeverity.Information);
+    expect(bySeverity.get("stale-bead")).toBe(vscode.DiagnosticSeverity.Warning);
+  });
+
+  it("names the beads that sit outside every epic", () => {
+    const diagnostics = createDiagnostics();
+
+    diagnostics.update(hierarchy(["bd-loose"]), project());
+
+    const [entry] = published("/repo/.beads").filter((d) => d.code === "loose-work");
+    expect(entry.message).toContain("bd-loose");
+    expect(entry.message).not.toContain("bd-epic");
+    expect(entry.source).toBe(DIAGNOSTIC_SOURCE);
+  });
+
+  it("keeps a hygiene snapshot alive across a local republish", () => {
+    const diagnostics = createDiagnostics();
+    diagnostics.setShellFindings([finding()], project());
+
+    // A repaint derives the graph again. The shell tier is not re-run, so it
+    // must not be dropped either.
+    diagnostics.update(model(), project());
+
+    expect(published("/repo/.beads").map((d) => d.code)).toEqual(["stale-bead"]);
+  });
+
+  it("replaces the previous snapshot rather than appending to it", () => {
+    const diagnostics = createDiagnostics();
+    diagnostics.setShellFindings([finding(), finding({ beadIds: ["bd-two"] })], project());
+
+    diagnostics.setShellFindings([finding()], project());
+
+    expect(published("/repo/.beads")).toHaveLength(1);
+  });
+
+  it("drops the snapshot on a project switch, since the ids mean nothing there", () => {
+    const diagnostics = createDiagnostics();
+    diagnostics.setShellFindings([finding()], project());
+
+    diagnostics.update(model(), project({ id: "p2", beadsDir: "/other/.beads" }));
+
+    expect(collection().entries.has("/repo/.beads")).toBe(false);
+    expect(collection().entries.has("/other/.beads")).toBe(false);
+  });
+
+  it("clears the anchor when the last finding of either tier is resolved", () => {
+    const diagnostics = createDiagnostics();
+    diagnostics.update(derivedCycle(), project());
+    diagnostics.setShellFindings([finding()], project());
+
+    diagnostics.update(model(), project());
+    diagnostics.setShellFindings([], project());
+
+    expect(collection().entries.has("/repo/.beads")).toBe(false);
+  });
+
+  it("ignores a snapshot published after disposal", () => {
+    const diagnostics = createDiagnostics();
+    diagnostics.dispose();
+
+    expect(() => diagnostics.setShellFindings([finding()], project())).not.toThrow();
+    expect(collection().entries.size).toBe(0);
+  });
+});
+
+describe("hygiene quick fixes", () => {
+  const fix = {
+    key: "commit-referenced-open",
+    title: "Close 2 issues already referenced by commits",
+    action: { type: "closeCommitReferenced" as const, ids: ["bd-a", "bd-b"] },
+  };
+
+  beforeEach(() => {
+    createdDiagnosticCollections.length = 0;
+  });
+
+  it("looks a fix back up from the diagnostic it was published with", () => {
+    const diagnostics = createDiagnostics();
+    const withFix = finding({ code: fix.key, message: "still open: bd-a, bd-b", fix });
+
+    diagnostics.setShellFindings([withFix], project());
+
+    const [entry] = published("/repo/.beads");
+    expect(diagnostics.getFix(diagnosticKey(entry))).toEqual(fix);
+  });
+
+  it("offers a quick fix only for the diagnostics that carry one", () => {
+    const diagnostics = createDiagnostics();
+    diagnostics.setShellFindings(
+      [finding({ code: fix.key, message: "still open: bd-a, bd-b", fix }), finding()],
+      project()
+    );
+    const provider = new BeadsHygieneActions(diagnostics);
+
+    const actions = provider.provideCodeActions(
+      {} as never,
+      {} as never,
+      { diagnostics: published("/repo/.beads") } as never
+    );
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0].title).toBe(fix.title);
+    expect(actions[0].command?.command).toBe("beads.applyHygieneFix");
+
+    // The argument has to be the key the extension can resolve back to a fix,
+    // because the lightbulb cannot carry the finding itself across the host.
+    const [key] = actions[0].command?.arguments as string[];
+    expect(diagnostics.getFix(key)).toEqual(fix);
+  });
+
+  it("ignores diagnostics published by anything other than beads", () => {
+    const diagnostics = createDiagnostics();
+    diagnostics.setShellFindings(
+      [finding({ code: fix.key, message: "still open", fix })],
+      project()
+    );
+    const provider = new BeadsHygieneActions(diagnostics);
+    const foreign = published("/repo/.beads").map((d) => ({ ...d, source: "eslint" }));
+
+    const actions = provider.provideCodeActions(
+      {} as never,
+      {} as never,
+      { diagnostics: foreign } as never
+    );
+
+    expect(actions).toEqual([]);
+  });
+
+  it("forgets its fixes when the findings are cleared", () => {
+    const diagnostics = createDiagnostics();
+    const withFix = finding({ code: fix.key, message: "still open", fix });
+    diagnostics.setShellFindings([withFix], project());
+    expect(diagnostics.listFixes()).toHaveLength(1);
+
+    diagnostics.setShellFindings([], project());
+
+    expect(diagnostics.listFixes()).toEqual([]);
+  });
+
+  it("spells out the blast radius, because every fix closes beads", () => {
+    expect(describeFix(fix.action)).toContain("bd-a, bd-b");
+    expect(
+      describeFix({ type: "closeDuplicate", sources: ["bd-dup"], target: "bd-keep" })
+    ).toBe("Closes bd-dup and links it to bd-keep as related.");
   });
 });

@@ -71,9 +71,24 @@ export interface FakeDiagnosticCollection {
   dispose: () => void;
 }
 
+export class CodeActionKind {
+  constructor(public readonly value: string) {}
+  static readonly QuickFix = new CodeActionKind("quickfix");
+}
+
+export class CodeAction {
+  public diagnostics?: Diagnostic[];
+  public command?: { command: string; title: string; arguments?: unknown[] };
+  constructor(
+    public readonly title: string,
+    public readonly kind?: CodeActionKind
+  ) {}
+}
+
 export const createdDiagnosticCollections: FakeDiagnosticCollection[] = [];
 
 export const languages = {
+  registerCodeActionsProvider: () => ({ dispose: () => undefined }),
   createDiagnosticCollection: (name: string): FakeDiagnosticCollection => {
     const collection: FakeDiagnosticCollection = {
       name,
@@ -128,11 +143,15 @@ export interface FakeWebviewPanel {
 
 export const createdPanels: FakeWebviewPanel[] = [];
 
+export const ProgressLocation = { SourceControl: 1, Window: 10, Notification: 15 };
+
 export const window = {
   showErrorMessage: () => undefined,
   showWarningMessage: () => undefined,
   showInformationMessage: () => undefined,
+  showQuickPick: async () => undefined,
   setStatusBarMessage: () => undefined,
+  withProgress: async <T>(_options: unknown, task: () => Promise<T>): Promise<T> => task(),
   createWebviewPanel: (viewType: string, title: string): FakeWebviewPanel => {
     const disposeHandlers: Array<() => void> = [];
     const viewStateHandlers: Array<() => void> = [];
