@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- "Beads: Check Hygiene" runs `bd lint`, `bd stale`, `bd duplicates`, `bd find-duplicates`, and `bd orphans` into the Problems panel, with Quick Fixes where bd can fix the finding
+- Problems panel flags open work that sits outside every epic, alongside dependency cycles
+
+### Changed
+
+- Problems panel entries come from a pluggable rule set rather than a single hardcoded cycle check; each rule carries its own diagnostic code and severity
+
 ### Fixed
 
 - Tree mode heads an epic's own group even before it has any tasks, instead of filing it under "No epic"

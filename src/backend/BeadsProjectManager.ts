@@ -439,7 +439,14 @@ export class BeadsProjectManager implements vscode.Disposable {
     return "bd";
   }
 
-  private getBdPath(): string {
+  /**
+   * The bd executable every path in the extension should spawn.
+   *
+   * Public because the hygiene rules shell out to bd directly rather than
+   * through `BeadsBackend`: the Dolt SQL backend never spawns bd at all, and
+   * hygiene has to work the same on both.
+   */
+  public getBdPath(): string {
     const config = vscode.workspace.getConfiguration("beads");
     const configuredBdPath = config.get<string>("pathToBd", "bd") ?? "bd";
     return this.resolveBdPath(resolveEnvVariables(configuredBdPath).trim());

@@ -120,6 +120,15 @@
       {
         "command": "beads.toggleTreeMode",
         "title": "Beads: Toggle Tree View"
+      },
+      {
+        "command": "beads.runHygiene",
+        "title": "Beads: Check Hygiene",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "beads.applyHygieneFix",
+        "title": "Beads: Apply Hygiene Fix"
       }
     ],
     "menus": {
@@ -177,6 +186,19 @@
           "default": 1000,
           "minimum": 0,
           "description": "Delay in milliseconds before showing bead description tooltip on hover. Set to 0 to disable tooltips."
+        },
+        "beads.hygiene.staleDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "description": "Days without an update before 'Beads: Check Hygiene' reports an issue as stale (bd stale --days)."
+        },
+        "beads.hygiene.similarityThreshold": {
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Similarity score above which 'Beads: Check Hygiene' reports two issues as near-duplicates (bd find-duplicates --threshold). Lower reports more pairs."
         }
       }
     },
