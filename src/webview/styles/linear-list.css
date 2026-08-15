@@ -151,6 +151,12 @@
   color: var(--vscode-charts-red);
 }
 
+/* Waiting on a person, not on work. Amber rather than red: it is not a defect,
+   it is an unanswered question - and the glyph, not the hue, is what says so. */
+.lin-chip-blockedByPerson svg {
+  color: var(--vscode-charts-yellow);
+}
+
 .lin-chip-blocks svg {
   color: var(--vscode-charts-blue);
 }

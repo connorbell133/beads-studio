@@ -11,6 +11,9 @@ import {
   CloseIssueArgs,
   CreateIssueArgs,
   DependencyArgs,
+  HumanDismissArgs,
+  HumanNeededPayload,
+  HumanRespondArgs,
   UpdateIssueArgs,
 } from "./BeadsBackend";
 import { BeadsCommandRunner } from "./BeadsCommandRunner";
@@ -64,6 +67,9 @@ export function rowToBeadsIssue(row: SqlRow, labels: string[] = []): BeadsIssue 
     status: str(row.status),
     priority: num(row.priority, 4),
     issue_type: str(row.issue_type),
+    // Absent unless the row is a gate, and absent entirely on schemas with no
+    // such column - the graph read only selects it when it exists.
+    await_type: optionalStr(row.await_type),
     assignee: optionalStr(row.assignee),
     labels,
     estimated_minutes: optionalNum(row.estimated_minutes),
@@ -132,6 +138,7 @@ export class BeadsDoltBackend implements BeadsBackend {
   private connectionInfo: DoltConnectionInfo | null = null;
   private readonly inFlightReads = new Map<string, Promise<unknown>>();
   private depSqlPartsPromise: Promise<{ targetExpr: string; issueTargetColumn: string }> | null = null;
+  private awaitTypeColumnPromise: Promise<boolean> | null = null;
   private poolPromise: Promise<mysql.Pool> | null = null;
 
   constructor(params: {
@@ -244,7 +251,10 @@ export class BeadsDoltBackend implements BeadsBackend {
    */
   async listGraph(): Promise<BeadsGraphPayload> {
     return this.coalesceRead("listGraph", async () => {
-      const { targetExpr } = await this.getDepSqlParts();
+      const [{ targetExpr }, hasAwaitType] = await Promise.all([
+        this.getDepSqlParts(),
+        this.hasAwaitTypeColumn(),
+      ]);
 
       const [rows, edgeRows] = await Promise.all([
         this.query<SqlRow>(`
@@ -258,6 +268,7 @@ export class BeadsDoltBackend implements BeadsBackend {
             status,
             priority,
             issue_type,
+            ${hasAwaitType ? "NULLIF(await_type, '') AS await_type," : ""}
             NULLIF(assignee, '') AS assignee,
             estimated_minutes,
             NULLIF(external_ref, '') AS external_ref,
@@ -344,6 +355,25 @@ export class BeadsDoltBackend implements BeadsBackend {
         comments,
       } satisfies BeadsIssue;
     });
+  }
+
+  /**
+   * The human verbs stay on the CLI, like every other write.
+   *
+   * `bd human respond` comments, closes, and stamps a reason in one audited
+   * transaction; reimplementing that as SQL here would fork the semantics the
+   * moment bd changed any part of it.
+   */
+  async listHumanNeeded(): Promise<HumanNeededPayload> {
+    return this.cli.listHumanNeeded();
+  }
+
+  async humanRespond(args: HumanRespondArgs): Promise<void> {
+    await this.cli.humanRespond(args);
+  }
+
+  async humanDismiss(args: HumanDismissArgs): Promise<void> {
+    await this.cli.humanDismiss(args);
   }
 
   async create(args: CreateIssueArgs): Promise<BeadsIssue> {
@@ -441,6 +471,35 @@ export class BeadsDoltBackend implements BeadsBackend {
           }
     );
     return this.depSqlPartsPromise;
+  }
+
+  /**
+   * Whether the `issues` table carries a gate's await condition.
+   *
+   * Probed once per connection and reset with the pool, exactly as the
+   * dependency-column shape above is (#79), and for the same reason: selecting
+   * a column that does not exist fails the whole graph query and blanks every
+   * view. The human inbox degrades gracefully without it - a gate with no known
+   * await type is treated as needing a person, which is bd's own default - so
+   * the probe is the cheap side of the trade in both directions.
+   */
+  private async hasAwaitTypeColumn(): Promise<boolean> {
+    this.awaitTypeColumnPromise ??= this.query<SqlRow>(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'issues'
+        AND column_name = 'await_type'
+    `)
+      .then((rows) => rows.length > 0)
+      .catch((error) => {
+        this.log.debug(
+          `Unable to probe issues.await_type, assuming absent: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        return false;
+      });
+    return this.awaitTypeColumnPromise;
   }
 
   private async loadDependencies(issueId: string): Promise<BeadsIssue["dependencies"]> {
@@ -680,6 +739,7 @@ export class BeadsDoltBackend implements BeadsBackend {
   private async resetPool(): Promise<void> {
     this.poolPromise = null;
     this.depSqlPartsPromise = null;
+    this.awaitTypeColumnPromise = null;
     if (this.pool) {
       await this.pool.end();
     }

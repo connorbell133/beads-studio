@@ -25,6 +25,7 @@ Beads Studio puts that graph on screen, live, inside VS Code:
 
 - **See the whole DAG** — every bead, every blocker, every epic, drawn as the graph it actually is
 - **Know what's ready** — the unblocked frontier, ranked by how much each pick-up unblocks
+- **Know what needs *you*** — the decisions your agents are stalled on, ranked by what the wait is costing
 - **Steer, don't scroll** — change status, priority, and dependencies in place while your agents keep working
 - **Watch it move** — Dolt-backed change polling keeps every view current as work lands
 
@@ -47,6 +48,10 @@ Drag cards between columns to change status. Handles `deferred`, `pinned`, `hook
 ### 🎯 Ready lane
 
 The dashboard answers one question first: *what can be picked up right now, and what does picking it up unblock?* Ordered by leverage, with blocker chains shown inline — derived from the graph, not from status labels.
+
+### 🙋 Needs You
+
+The human inbox. Beads awaiting a decision — everything `bd human list` reports, plus open gates waiting on a manual resolve — ordered by **stall cost**, not by age: how many beads are frozen behind each question, multiplied by how long it has sat. In a swarm the person is the bottleneck, and the oldest question is rarely the expensive one. Answer or dismiss in place; the view header carries the count.
 
 ### ✏️ Details panel
 

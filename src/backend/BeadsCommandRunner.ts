@@ -10,6 +10,9 @@ import {
   CloseIssueArgs,
   CreateIssueArgs,
   DependencyArgs,
+  HumanDismissArgs,
+  HumanNeededPayload,
+  HumanRespondArgs,
   MIN_SUPPORTED_BD_VERSION,
   UpdateIssueArgs,
 } from "./BeadsBackend";
@@ -100,6 +103,29 @@ export function createShowCommandArgs(id: string): string[] {
   return ["show", id, "--json", "--include-dependents"];
 }
 
+/**
+ * The ids in a `bd human list --json` payload.
+ *
+ * Verified against bd 1.2.1: the command emits a bare `null` rather than `[]`
+ * when nothing is waiting, which `JSON.parse` turns into a value that is not an
+ * array and not an error. An empty inbox is the common case, so treating that
+ * as a parse failure would mark the surface degraded almost all the time.
+ *
+ * Entries without a usable string id are dropped rather than passed on as
+ * `undefined` - the ids are used as set members, and one bad entry would
+ * otherwise match every bead with no id.
+ */
+export function parseHumanNeeded(payload: unknown): string[] {
+  if (!Array.isArray(payload)) return [];
+  const ids: string[] = [];
+  for (const entry of payload) {
+    if (!entry || typeof entry !== "object") continue;
+    const id = (entry as { id?: unknown }).id;
+    if (typeof id === "string" && id.trim()) ids.push(id.trim());
+  }
+  return ids;
+}
+
 export class BeadsCommandRunner implements BeadsBackend {
   private readonly bdPath: string;
   private readonly cwd: string;
@@ -161,6 +187,45 @@ export class BeadsCommandRunner implements BeadsBackend {
     });
     const nodes = Array.isArray(result) ? (result as BeadsIssue[]) : [];
     return { nodes, edges: edgesFromIssues(nodes), complete: capabilities.includeHidden };
+  }
+
+  /**
+   * `bd human list --json`, degrading to "unsupported" instead of throwing.
+   *
+   * The inbox has a correct fallback - the `human` label is already on every
+   * bead the graph read returned - so a bd without the `human` command should
+   * cost the user a caveat, not the surface. That is the same trade
+   * `probeListCapabilities` makes, and the reason neither failure propagates.
+   */
+  async listHumanNeeded(): Promise<HumanNeededPayload> {
+    try {
+      const result = await this.runReadJson(["human", "list", "--json"], { cacheTtlMs: 750 });
+      return { ids: parseHumanNeeded(result), supported: true };
+    } catch (error) {
+      this.log.debug(
+        `bd human list unavailable, falling back to label detection: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+      return { ids: [], supported: false };
+    }
+  }
+
+  /**
+   * Both human verbs go through `runText`, not `runJson`.
+   *
+   * bd 1.2.1 prints a human-readable confirmation for these even with --json,
+   * so parsing the output as JSON would throw on every success. Neither call
+   * needs a return value; what the caller wants is the throw on failure.
+   */
+  async humanRespond(args: HumanRespondArgs): Promise<void> {
+    await this.runText(["human", "respond", args.id, "--response", args.response]);
+  }
+
+  async humanDismiss(args: HumanDismissArgs): Promise<void> {
+    const cmdArgs = ["human", "dismiss", args.id];
+    if (args.reason) cmdArgs.push("--reason", args.reason);
+    await this.runText(cmdArgs);
   }
 
   private async getListCapabilities(): Promise<ListCapabilities> {

@@ -30,6 +30,14 @@ const REFRESH_TITLE = `Read the graph again now (it also refreshes every ${POLL_
 interface GraphViewProps {
   beads: Bead[];
   graph: BeadsGraphModel | null;
+  /**
+   * Ids waiting on a person, computed upstream over the unfiltered set.
+   *
+   * Human gates are coordination beads, so they never reach this view's own
+   * bead list - a blocker that is a person's problem would otherwise read here
+   * as just another id, and usually as "(not loaded)".
+   */
+  humanWaitingIds?: readonly string[];
   loading: boolean;
   error: string | null;
   selectedBeadId: string | null;
@@ -44,6 +52,7 @@ interface GraphViewProps {
 export function GraphView({
   beads,
   graph,
+  humanWaitingIds,
   loading,
   error,
   selectedBeadId,
@@ -53,6 +62,7 @@ export function GraphView({
   onRefresh,
 }: GraphViewProps): React.ReactElement {
   const byId = useMemo(() => new Map(beads.map((b) => [b.id, b])), [beads]);
+  const waitingOnPerson = useMemo(() => new Set(humanWaitingIds ?? []), [humanWaitingIds]);
 
   // Deepest-first: a bead nothing blocks reads as the root of its chain, and
   // the order matches the sequence work would actually be done in.
@@ -217,10 +227,23 @@ export function GraphView({
                       <button
                         type="button"
                         className="graph-blocker-link"
+                        title={
+                          waitingOnPerson.has(blockerId)
+                            ? `${blockerId} is waiting on a person - it clears when someone answers`
+                            : `Open ${blockerId}`
+                        }
                         onClick={() => onSelectBead(blockerId)}
                       >
                         {blockerId}
-                        {byId.get(blockerId) ? "" : " (not loaded)"}
+                        {/* Named rather than hued. A blocker only a person can
+                            clear never clears on its own, and human gates are
+                            exactly the beads this list used to write off as
+                            unloaded - the same words for two opposite states. */}
+                        {waitingOnPerson.has(blockerId)
+                          ? " (needs a person)"
+                          : byId.get(blockerId)
+                            ? ""
+                            : " (not loaded)"}
                       </button>
                     </React.Fragment>
                   ))}

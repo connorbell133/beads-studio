@@ -13,6 +13,7 @@ import {
   BeadsSummary,
   COORDINATION_TYPES,
   ExtensionMessage,
+  HumanNeededState,
   WebviewSettings,
   vscode,
 } from "./types";
@@ -20,6 +21,8 @@ import { DashboardView } from "./views/DashboardView";
 import { IssuesView } from "./views/IssuesView";
 import { DetailsView } from "./views/DetailsView";
 import { GraphView } from "./views/GraphView";
+import { NeedsYouView } from "./views/NeedsYouView";
+import { waitingOnHuman } from "../graph/human-inbox";
 import { Loading } from "./common/Loading";
 import { NoProject } from "./common/NoProject";
 import { ToastProvider, triggerToast } from "./common/Toast";
@@ -42,6 +45,8 @@ interface AppState {
   pulseEvents: { id: string; at: number }[];
   summary: BeadsSummary | null;
   graph: BeadsGraphModel | null;
+  /** What bd said about who needs a person. Null until the first read lands. */
+  humanNeeded: HumanNeededState | null;
   loading: boolean;
   error: string | null;
   settings: WebviewSettings;
@@ -61,6 +66,7 @@ const initialState: AppState = {
   pulseEvents: [],
   summary: null,
   graph: null,
+  humanNeeded: null,
   loading: true,
   error: null,
   settings: { renderMarkdown: true, userId: "", tooltipHoverDelay: 1000 },
@@ -112,6 +118,9 @@ export function App(): React.ReactElement {
       case "setGraph":
         setState((prev) => ({ ...prev, graph: message.graph }));
         break;
+      case "setHumanNeeded":
+        setState((prev) => ({ ...prev, humanNeeded: message.humanNeeded }));
+        break;
       case "focusGraphFind":
         setState((prev) => ({ ...prev, findRequests: prev.findRequests + 1 }));
         break;
@@ -145,12 +154,25 @@ export function App(): React.ReactElement {
     };
   }, [handleMessage]);
 
-  // Coordination beads reach the webview so the graph is complete and future
-  // surfaces (a gate lane, a human inbox) can render them. They are filtered
-  // once here rather than per view, so adding a view cannot leak them by
-  // omission - and so this is the only line to change when a surface wants them.
+  // Coordination beads reach the webview so the graph is complete and the human
+  // inbox can render them. They are filtered once here rather than per view, so
+  // adding a view cannot leak them by omission; a surface that wants them opts
+  // in explicitly by reading `state.beads`, as NeedsYouView does below. That
+  // stays a per-surface decision rather than a flag on this filter, because
+  // "which coordination beads does this view mean" is not one answer - the
+  // inbox wants human gates, and a future merge-slot lane would want neither.
   const visibleBeads = useMemo(
     () => state.beads.filter((bead) => !COORDINATION_TYPES.includes(bead.type as never)),
+    [state.beads]
+  );
+
+  // Which blockers a person has to clear, computed once over the *unfiltered*
+  // set and handed to the filtered views as bare ids. It has to be computed
+  // here: the beads that make a blocker a person's problem are human gates, and
+  // those are exactly what `visibleBeads` drops - a view deriving this from its
+  // own list would classify every gate as ordinary work.
+  const humanWaitingIds = useMemo(
+    () => [...waitingOnHuman(state.beads)],
     [state.beads]
   );
 
@@ -160,7 +182,11 @@ export function App(): React.ReactElement {
       if (
         !state.loading &&
         !state.project &&
-        (state.viewType === "beadsPanel" || state.viewType === "beadsDashboard")
+        (state.viewType === "beadsPanel" ||
+          state.viewType === "beadsDashboard" ||
+          // Without this the inbox would claim "nothing needs you" when the
+          // real answer is that nothing has been read yet.
+          state.viewType === "beadsNeedsYou")
       ) {
         return <NoProject />;
       }
@@ -212,6 +238,7 @@ export function App(): React.ReactElement {
           <IssuesView
             beads={visibleBeads}
             graph={state.graph}
+            humanWaitingIds={humanWaitingIds}
             loading={state.loading}
             error={state.error}
             selectedBeadId={state.selectedBeadId}
@@ -230,11 +257,36 @@ export function App(): React.ReactElement {
           />
         );
 
+      case "beadsNeedsYou":
+        // The one surface that reads the unfiltered set: a human gate IS the
+        // thing it lists, so filtering coordination types here would empty it.
+        return (
+          <NeedsYouView
+            beads={state.beads}
+            graph={state.graph}
+            humanNeeded={state.humanNeeded}
+            loading={state.loading}
+            error={state.error}
+            selectedBeadId={state.selectedBeadId}
+            onSelectBead={(beadId) =>
+              vscode.postMessage({ type: "openBeadDetails", beadId })
+            }
+            onRespond={(beadId, text) =>
+              vscode.postMessage({ type: "humanRespond", beadId, text })
+            }
+            onDismiss={(beadId, reason) =>
+              vscode.postMessage({ type: "humanDismiss", beadId, reason })
+            }
+            onRetry={() => vscode.postMessage({ type: "refresh" })}
+          />
+        );
+
       case "beadsGraph":
         return (
           <GraphView
             beads={visibleBeads}
             graph={state.graph}
+            humanWaitingIds={humanWaitingIds}
             focusFindToken={state.findRequests}
             loading={state.loading}
             error={state.error}

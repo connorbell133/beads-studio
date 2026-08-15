@@ -80,6 +80,11 @@ export interface Bead {
   acceptanceCriteria?: string; // Acceptance criteria
   notes?: string; // Working notes
   type?: string; // Beads issue_type: bug, feature, task, epic, chore
+  /**
+   * A gate's await condition: `human`, `timer`, `gh:run`, `gh:pr`, `bead`.
+   * Only gates carry it, and only backends whose schema exposes it.
+   */
+  awaitType?: string;
   priority?: BeadPriority;
   status: BeadStatus;
   assignee?: string;
@@ -328,6 +333,18 @@ export interface BeadsSummary {
   degraded: boolean;
 }
 
+/**
+ * What bd said about who needs a person, as sent to the webview.
+ *
+ * `supported: false` means `bd human list` could not be run, so the webview
+ * falls back to reading the `human` label itself and shows the caveat. It never
+ * means "nothing is waiting" - gates are unaffected either way.
+ */
+export interface HumanNeededState {
+  ids: string[];
+  supported: boolean;
+}
+
 // Settings that can be passed to webview
 export interface WebviewSettings {
   renderMarkdown: boolean;
@@ -353,6 +370,8 @@ export type ExtensionToWebviewMessage =
   | { type: "setLoading"; loading: boolean }
   | { type: "setError"; error: string | null }
   | { type: "setSettings"; settings: WebviewSettings }
+  | { type: "setHumanNeeded"; humanNeeded: HumanNeededState }
+  | { type: "showToast"; text: string }
   | { type: "refresh" };
 
 // Messages sent from webview to extension
@@ -377,6 +396,8 @@ export type WebviewToExtensionMessage =
   | { type: "copyBeadId"; beadId: string }
   | { type: "openFile"; filePath: string; line?: number }
   | { type: "openIssuesPreset"; presetId: string }
+  | { type: "humanRespond"; beadId: string; text: string }
+  | { type: "humanDismiss"; beadId: string; reason?: string }
   | { type: "openGraph" };
 
 // CLI command result
@@ -513,6 +534,7 @@ export function issueToWebviewBead(issue: {
   status: string;
   priority: number;
   issue_type: string;
+  await_type?: string;
   assignee?: string;
   labels?: string[];
   estimated_minutes?: number;
@@ -536,6 +558,7 @@ export function issueToWebviewBead(issue: {
     acceptanceCriteria: issue.acceptance_criteria,
     notes: issue.notes,
     type: issue.issue_type,
+    awaitType: issue.await_type,
     priority: normalizePriority(issue.priority),
     status,
     assignee: issue.assignee,

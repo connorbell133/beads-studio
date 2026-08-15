@@ -19,6 +19,14 @@ export interface BeadsIssue {
   status: string;
   priority: number;
   issue_type: string;
+  /**
+   * A gate's await condition: `human`, `timer`, `gh:run`, `gh:pr`, `bead`.
+   *
+   * Only gate beads carry it. It is what separates a gate a person has to clear
+   * from one that clears itself, so the human inbox cannot be correct without
+   * it - see `src/graph/human-inbox.ts`.
+   */
+  await_type?: string;
   assignee?: string;
   labels?: string[];
   estimated_minutes?: number;
@@ -95,6 +103,29 @@ export interface AddCommentArgs {
   text: string;
 }
 
+/**
+ * What `bd human list` reported, and whether it could be asked at all.
+ *
+ * bd owns the definition of "needs a human" - today, the `human` label - so its
+ * answer is authoritative when available. `supported: false` means the command
+ * is missing or failed, not that nothing is waiting: the caller falls back to
+ * reading the label off the beads it already has and says so on screen.
+ */
+export interface HumanNeededPayload {
+  ids: string[];
+  supported: boolean;
+}
+
+export interface HumanRespondArgs {
+  id: string;
+  response: string;
+}
+
+export interface HumanDismissArgs {
+  id: string;
+  reason?: string;
+}
+
 export interface BackendCompatibility {
   supported: boolean;
   detectedVersion?: string;
@@ -121,6 +152,20 @@ export interface BeadsBackend {
    * use this one; filtering hidden types is a display concern.
    */
   listGraph(): Promise<BeadsGraphPayload>;
+  /**
+   * The ids bd itself considers to need a person, from `bd human list --json`.
+   *
+   * A read, not a derivation: the extension already has every label, but which
+   * labels mean "a human owes an answer" is bd's call, not the extension's, and
+   * pinning it here means a future `bd human` that widens the definition widens
+   * this surface for free. Never throws - an older bd degrades the inbox rather
+   * than blanking it.
+   */
+  listHumanNeeded(): Promise<HumanNeededPayload>;
+  /** `bd human respond`: comments the answer and closes the bead. */
+  humanRespond(args: HumanRespondArgs): Promise<void>;
+  /** `bd human dismiss`: closes the bead permanently without answering. */
+  humanDismiss(args: HumanDismissArgs): Promise<void>;
   show(id: string): Promise<BeadsIssue | null>;
   create(args: CreateIssueArgs): Promise<BeadsIssue>;
   update(args: UpdateIssueArgs): Promise<BeadsIssue>;
