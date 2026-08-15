@@ -9,6 +9,30 @@
 /** The bd types that coordinate work without being work. */
 export const COORDINATION_TYPES = ["gate", "agent", "role", "message"] as const;
 
+/**
+ * The bd types whose job is to hold other work.
+ *
+ * Containment is a fact, not a type - anything with children contains work, and
+ * every surface that groups beads treats it that way. This list only answers
+ * the other half of the question: which beads head a group *before* anything is
+ * under them, and which ones deserve a rollup even while empty. `epic` was the
+ * only such type for the life of this extension; `milestone` has been a
+ * first-class bd type with its own glyph the whole time and was rolled up
+ * nowhere.
+ *
+ * Anything derived from containment - progress, member estimates, the critical
+ * path - is computed for every parent regardless of type. Nothing here gates
+ * that.
+ */
+export const CONTAINER_TYPES = ["epic", "milestone"] as const;
+
+export type ContainerType = (typeof CONTAINER_TYPES)[number];
+
+/** Whether a bd type exists to hold other work. Unknown types are not containers. */
+export function isContainerType(type: string | undefined): boolean {
+  return type !== undefined && (CONTAINER_TYPES as readonly string[]).includes(type);
+}
+
 /** The subset of a bead the derivation reads. Satisfied by BeadsIssue. */
 export interface GraphInputNode {
   id: string;
@@ -16,6 +40,8 @@ export interface GraphInputNode {
   issue_type?: string;
   priority?: number;
   created_at?: string;
+  /** bd's own time estimate, in minutes. Optional and frequently absent. */
+  estimated_minutes?: number;
   /** `bd list --json` emits this scalar alongside the parent-child edge. */
   parent?: string;
   parent_id?: string;
@@ -61,7 +87,24 @@ export interface BeadGraphNode {
   children: string[];
   /** Present only when the bead has children. */
   childCounts?: { closed: number; total: number };
-  /** Longest member chain, on epics with children. */
+  /**
+   * Member estimates summed over the whole subtree, not just direct children.
+   *
+   * Deeper than `childCounts` on purpose: estimates are recorded on leaf work,
+   * so a milestone holding epics holding tasks has no estimate at all one level
+   * down. Present only when at least one member carries an estimate - a
+   * container reporting `0m` would be a claim about the work, not a gap in the
+   * data, and `counted` vs `total` is what tells those two apart.
+   */
+  memberEstimate?: {
+    /** Summed `estimated_minutes` across members that have one. */
+    minutes: number;
+    /** Members carrying an estimate. */
+    counted: number;
+    /** Members in the subtree, the container itself excluded. */
+    total: number;
+  };
+  /** Longest member chain, on containers and on anything else with children. */
   criticalPath?: number;
   inCycle: boolean;
 }

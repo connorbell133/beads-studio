@@ -19,6 +19,9 @@ const node = (id: string, over: Partial<GraphInputNode> = {}): GraphInputNode =>
 const epic = (id: string, over: Partial<GraphInputNode> = {}): GraphInputNode =>
   node(id, { issue_type: "epic", ...over });
 
+const milestone = (id: string, over: Partial<GraphInputNode> = {}): GraphInputNode =>
+  node(id, { issue_type: "milestone", ...over });
+
 const parentEdge = (child: string, parent: string): GraphInputEdge => ({
   from: child,
   to: parent,
@@ -461,5 +464,154 @@ describe("containers", () => {
     const tree = buildTree(beads, graph, { containers: ["e1"] });
 
     expect(ids(tree.orphans)).toEqual(["e2", "loner"]);
+  });
+});
+
+describe("member estimates on the tree", () => {
+  /** An epic with two 45-minute tasks and one nobody sized. */
+  const partlySized = () => {
+    const nodes = [
+      epic("e1"),
+      node("t1", { parent: "e1", estimated_minutes: 45 }),
+      node("t2", { parent: "e1", estimated_minutes: 45 }),
+      node("t3", { parent: "e1" }),
+    ];
+    return {
+      graph: deriveGraph(nodes, [], { complete: true }),
+      beads: nodes.map((n) => ({ id: n.id })),
+    };
+  };
+
+  it("hands the container a readable total", () => {
+    const { graph, beads } = partlySized();
+
+    const root = buildTree(beads, graph).roots[0];
+
+    expect(root.treeEstimate).toMatchObject({ minutes: 90, label: "1h 30m" });
+  });
+
+  it("marks the total partial when a member was never sized", () => {
+    const { graph, beads } = partlySized();
+
+    const root = buildTree(beads, graph).roots[0];
+
+    expect(root.treeEstimate).toMatchObject({ counted: 2, total: 3, partial: true });
+  });
+
+  it("does not mark it partial once every member is sized", () => {
+    const nodes = [
+      epic("e1"),
+      node("t1", { parent: "e1", estimated_minutes: 60 }),
+      node("t2", { parent: "e1", estimated_minutes: 60 }),
+    ];
+    const graph = deriveGraph(nodes, [], { complete: true });
+    const beads = nodes.map((n) => ({ id: n.id }));
+
+    const root = buildTree(beads, graph).roots[0];
+
+    expect(root.treeEstimate).toEqual({
+      minutes: 120,
+      counted: 2,
+      total: 2,
+      label: "2h",
+      partial: false,
+    });
+  });
+
+  it("gives a milestone the same total an epic of the same shape gets", () => {
+    const shape = (head: GraphInputNode) => {
+      const nodes = [
+        head,
+        node("t1", { parent: head.id, estimated_minutes: 30 }),
+        node("t2", { parent: head.id, estimated_minutes: 30 }),
+      ];
+      const graph = deriveGraph(nodes, [], { complete: true });
+      const beads = nodes.map((n) => ({ id: n.id }));
+      return buildTree(beads, graph).roots[0].treeEstimate;
+    };
+
+    expect(shape(milestone("c1"))).toEqual(shape(epic("c1")));
+    expect(shape(milestone("c1"))).toMatchObject({ label: "1h" });
+  });
+
+  it("reports nothing on a bead nobody sized anything under", () => {
+    const nodes = [epic("e1"), node("t1", { parent: "e1" })];
+    const graph = deriveGraph(nodes, [], { complete: true });
+    const beads = nodes.map((n) => ({ id: n.id }));
+
+    expect(buildTree(beads, graph).roots[0].treeEstimate).toBeUndefined();
+  });
+
+  it("reports nothing on a leaf carrying its own estimate", () => {
+    // A bead's own estimate is already on its detail panel. This field only
+    // ever answers "how much work is inside this one".
+    const nodes = [node("loner", { estimated_minutes: 90 })];
+    const graph = deriveGraph(nodes, [], { complete: true });
+
+    const tree = buildTree([{ id: "loner" }], graph);
+
+    expect(tree.orphans[0].treeEstimate).toBeUndefined();
+  });
+
+  it("keeps the total whole when a filter hides the members it came from", () => {
+    // The rollup describes the container, not the rows currently on screen. A
+    // total that shrank as you typed in the search box would be a different
+    // number wearing the same label.
+    const { graph, beads } = partlySized();
+
+    const root = buildTree(beads, graph, { matched: ["e1"] }).roots[0];
+
+    expect(root.treeEstimate).toMatchObject({ minutes: 90, counted: 2, total: 3 });
+  });
+});
+
+describe("milestones as containers", () => {
+  it("heads its own group with the rollup an epic would get", () => {
+    const nodes = [
+      milestone("m1"),
+      node("t1", { parent: "m1", status: "closed" }),
+      node("t2", { parent: "m1" }),
+    ];
+    const graph = deriveGraph(nodes, [], { complete: true });
+    const beads = nodes.map((n) => ({ id: n.id }));
+
+    const root = buildTree(beads, graph).roots[0];
+
+    expect(root.id).toBe("m1");
+    expect(root.treeRollup).toEqual({ closed: 1, total: 2, percent: 50, label: "1/2" });
+  });
+
+  it("heads its own group before it holds anything, once named a container", () => {
+    const nodes = [milestone("m1"), node("loner")];
+    const graph = deriveGraph(nodes, [], { complete: true });
+    const beads = nodes.map((n) => ({ id: n.id }));
+
+    const tree = buildTree(beads, graph, { containers: ["m1"] });
+
+    expect(ids(tree.roots)).toEqual(["m1"]);
+    expect(ids(tree.orphans)).toEqual(["loner"]);
+  });
+
+  it("rolls an epic nested under it up without double-counting", () => {
+    const nodes = [
+      milestone("m1"),
+      epic("e1", { parent: "m1" }),
+      node("t1", { parent: "e1", status: "closed" }),
+      node("t2", { parent: "e1" }),
+    ];
+    const graph = deriveGraph(nodes, [], { complete: true });
+    const beads = nodes.map((n) => ({ id: n.id }));
+
+    const root = buildTree(beads, graph).roots[0];
+
+    // Completion stays direct-children, as it has always been: the milestone
+    // holds one epic, and that epic is not closed.
+    expect(root.treeRollup).toEqual({ closed: 0, total: 1, percent: 0, label: "0/1" });
+    expect(root.subRows?.[0].treeRollup).toEqual({
+      closed: 1,
+      total: 2,
+      percent: 50,
+      label: "1/2",
+    });
   });
 });

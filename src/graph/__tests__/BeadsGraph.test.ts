@@ -445,3 +445,138 @@ describe("deriveGraph structural blocking graph", () => {
     expect(g.nodes.b.dependsOn).toEqual([]);
   });
 });
+
+describe("container types", () => {
+  it("gives an empty milestone its own depth, as it always did for an epic", () => {
+    const g = deriveGraph(
+      [node("m", { issue_type: "milestone" }), node("e", { issue_type: "epic" })],
+      []
+    );
+
+    expect(g.nodes.m.criticalPath).toBe(1);
+    expect(g.nodes.e.criticalPath).toBe(1);
+  });
+
+  it("gives a childless leaf no critical path at all", () => {
+    // Containment is what earns a depth. A task with nothing under it has none.
+    const g = deriveGraph([node("t")], []);
+
+    expect(g.nodes.t.criticalPath).toBeUndefined();
+  });
+
+  it("reports a milestone's critical path from its members, same as an epic", () => {
+    const nodes = [
+      node("m", { issue_type: "milestone" }),
+      ...["a", "b", "c"].map((id) => node(id, { parent: "m" })),
+    ];
+    const g = deriveGraph(nodes, [blocks("b", "a"), blocks("c", "b")]);
+
+    expect(g.nodes.m.criticalPath).toBe(3);
+  });
+});
+
+describe("deriveGraph member estimates", () => {
+  it("sums the estimates of a container's members", () => {
+    const nodes = [
+      node("e", { issue_type: "epic" }),
+      node("a", { parent: "e", estimated_minutes: 30 }),
+      node("b", { parent: "e", estimated_minutes: 90 }),
+    ];
+    const g = deriveGraph(nodes, []);
+
+    expect(g.nodes.e.memberEstimate).toEqual({ minutes: 120, counted: 2, total: 2 });
+  });
+
+  it("reaches through the whole subtree, not just the direct children", () => {
+    // A milestone holds epics; epics hold the tasks that carry the estimates.
+    // A direct-children sum would report nothing at the level that matters.
+    const nodes = [
+      node("m", { issue_type: "milestone" }),
+      node("e", { issue_type: "epic", parent: "m" }),
+      node("a", { parent: "e", estimated_minutes: 60 }),
+      node("b", { parent: "e", estimated_minutes: 60 }),
+    ];
+    const g = deriveGraph(nodes, []);
+
+    expect(g.nodes.m.memberEstimate).toEqual({ minutes: 120, counted: 2, total: 3 });
+    expect(g.nodes.e.memberEstimate).toEqual({ minutes: 120, counted: 2, total: 2 });
+  });
+
+  it("counts members without an estimate so the total reads as a floor", () => {
+    const nodes = [
+      node("e", { issue_type: "epic" }),
+      node("a", { parent: "e", estimated_minutes: 45 }),
+      node("b", { parent: "e" }),
+      node("c", { parent: "e" }),
+    ];
+    const g = deriveGraph(nodes, []);
+
+    expect(g.nodes.e.memberEstimate).toEqual({ minutes: 45, counted: 1, total: 3 });
+  });
+
+  it("reports nothing when no member carries an estimate", () => {
+    // `0m` would be a claim about the work; absence is a gap in the data.
+    const nodes = [node("e", { issue_type: "epic" }), node("a", { parent: "e" })];
+    const g = deriveGraph(nodes, []);
+
+    expect(g.nodes.e.memberEstimate).toBeUndefined();
+  });
+
+  it("treats a recorded zero the same as no estimate at all", () => {
+    const nodes = [
+      node("e", { issue_type: "epic" }),
+      node("a", { parent: "e", estimated_minutes: 0 }),
+      node("b", { parent: "e", estimated_minutes: 20 }),
+    ];
+    const g = deriveGraph(nodes, []);
+
+    expect(g.nodes.e.memberEstimate).toEqual({ minutes: 20, counted: 1, total: 2 });
+  });
+
+  it("reports nothing on a bead with no members", () => {
+    const g = deriveGraph([node("t", { estimated_minutes: 60 })], []);
+
+    expect(g.nodes.t.memberEstimate).toBeUndefined();
+  });
+
+  it("does not count a bead's own estimate towards its own total", () => {
+    const nodes = [
+      node("e", { issue_type: "epic", estimated_minutes: 500 }),
+      node("a", { parent: "e", estimated_minutes: 10 }),
+    ];
+    const g = deriveGraph(nodes, []);
+
+    expect(g.nodes.e.memberEstimate).toEqual({ minutes: 10, counted: 1, total: 1 });
+  });
+
+  it("follows parentage that arrives only as a parent-child edge", () => {
+    const nodes = [node("e", { issue_type: "epic" }), node("a", { estimated_minutes: 25 })];
+    const g = deriveGraph(nodes, [{ from: "a", to: "e", type: "parent-child" }]);
+
+    expect(g.nodes.e.memberEstimate).toEqual({ minutes: 25, counted: 1, total: 1 });
+  });
+
+  it("terminates on a parent-child loop instead of summing forever", () => {
+    const nodes = [
+      node("a", { parent: "b", estimated_minutes: 10 }),
+      node("b", { parent: "a", estimated_minutes: 10 }),
+    ];
+    const g = deriveGraph(nodes, []);
+
+    expect(g.nodes.a.memberEstimate).toEqual({ minutes: 10, counted: 1, total: 1 });
+    expect(g.nodes.b.memberEstimate).toEqual({ minutes: 10, counted: 1, total: 1 });
+  });
+
+  it("keeps counting a member after it closes", () => {
+    // The estimate is what the work was sized at, not what is left to do.
+    // Netting closed members out would make this a forecast, which it is not.
+    const nodes = [
+      node("e", { issue_type: "epic" }),
+      node("a", { parent: "e", estimated_minutes: 60, status: "closed" }),
+      node("b", { parent: "e", estimated_minutes: 60 }),
+    ];
+    const g = deriveGraph(nodes, []);
+
+    expect(g.nodes.e.memberEstimate).toEqual({ minutes: 120, counted: 2, total: 2 });
+  });
+});

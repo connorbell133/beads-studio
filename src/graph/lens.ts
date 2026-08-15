@@ -5,15 +5,16 @@
  * before layout. All three share one render path, so the canvas has no idea
  * which lens it is drawing - it just gets fewer or more nodes.
  *
- *   epic          One epic, opened up: the epic and every descendant, with each
- *                 member tethered to its container so the picture converges on
- *                 the epic, plus the blocking edges among members. Answers
- *                 "what is inside this epic and in what order". Anchored by an
- *                 epic id chosen in the toolbar, not by the selection. The
- *                 default lens: it is the one that is smaller by construction,
- *                 and a 500-node hairball on open is a decision-paralysis
- *                 surface. Orphan top-level beads belong to the full lens, not
- *                 here.
+ *   epic          One container, opened up: the container and every descendant,
+ *                 with each member tethered to it so the picture converges on
+ *                 the container, plus the blocking edges among members. Answers
+ *                 "what is inside this and in what order". Anchored by a
+ *                 container id chosen in the toolbar, not by the selection. A
+ *                 container is an epic, a milestone, or anything that is some
+ *                 visible bead's parent. The default lens: it is the one that
+ *                 is smaller by construction, and a 500-node hairball on open
+ *                 is a decision-paralysis surface. Orphan top-level beads
+ *                 belong to the full lens, not here.
  *   full          Every visible bead, every blocking edge between two of them.
  *   blast-radius  The transitive closure of blockage around one bead, upstream
  *                 and downstream. Answers "what does this touch".
@@ -42,11 +43,20 @@
  * Pure and deterministic: same input, same node order, same edge order.
  */
 
-import { BeadsGraphModel, COORDINATION_TYPES } from "./types";
+import { BeadsGraphModel, COORDINATION_TYPES, isContainerType } from "./types";
 
 /** Edge keys join two ids; no bd id contains a tab. */
 const EDGE_KEY_SEP = "\t";
 
+/**
+ * `epic` is a key, not a claim about the type it draws.
+ *
+ * The lens has always drawn "one bead and everything under it" and now offers
+ * milestones alongside epics; only its label and its picker changed. The key
+ * stayed because it is what density collapse, toolbar state, and roughly forty
+ * assertions in the most regression-prone test file in this repo already name,
+ * and renaming an internal identifier buys the user nothing.
+ */
 export const GRAPH_LENSES = ["epic", "full", "blast-radius"] as const;
 
 export type GraphLens = (typeof GRAPH_LENSES)[number];
@@ -55,7 +65,7 @@ export type GraphLens = (typeof GRAPH_LENSES)[number];
 export const DEFAULT_LENS: GraphLens = "epic";
 
 export const LENS_LABELS: Record<GraphLens, string> = {
-  epic: "Epics",
+  epic: "Containers",
   full: "All beads",
   "blast-radius": "Blast radius",
 };
@@ -66,7 +76,7 @@ export const LENS_LABELS: Record<GraphLens, string> = {
  * wherever the user meets it.
  */
 export const LENS_DESCRIPTIONS: Record<GraphLens, string> = {
-  epic: "One epic at a time: everything inside it, and the blocking order among those beads. Pick which epic from the dropdown.",
+  epic: "One container at a time - an epic, a milestone, or anything holding work: everything inside it, and the blocking order among those beads. Pick which from the dropdown.",
   full: "Every bead, every blocking link.",
   "blast-radius":
     "The chain through one bead: everything it blocks and everything blocking it, however many links away.",
@@ -105,7 +115,7 @@ export interface LensNode {
    * a blocker, and the two surfaces disagreed about why something was stuck.
    */
   coordination: boolean;
-  /** Closed-of-total across the epic's members, on the epic lens's epic card only. */
+  /** Closed-of-total across members, on the container lens's anchor card only. */
   progress?: { closed: number; total: number };
   /**
    * Hops from the focus bead, on the blast-radius lens only. Negative upstream
@@ -147,7 +157,7 @@ export interface LensResult {
   lens: GraphLens;
   nodes: LensNode[];
   edges: LensEdge[];
-  /** The lens's anchor, when it has a usable one: the blast-radius focus, or the chosen epic. */
+  /** The lens's anchor, when it has a usable one: the blast-radius focus, or the chosen container. */
   focusId?: string;
   /** Beads in the model that this lens does not represent at all. */
   omitted: number;
@@ -156,13 +166,14 @@ export interface LensResult {
 /**
  * The lens to open on for a given project.
  *
- * The epic lens when there is any epic to open up - a readable subtree beats a
- * hairball, and it is the view that answers "what order does this work go in".
- * A project with no epics has nothing for that lens to draw, so it falls
- * through to the full graph. Density still governs from there.
+ * The container lens when there is any container to open up - a readable
+ * subtree beats a hairball, and it is the view that answers "what order does
+ * this work go in". A project with no containers has nothing for that lens to
+ * draw, so it falls through to the full graph. Density still governs from
+ * there.
  */
 export function chooseInitialLens(model: BeadsGraphModel, beads: LensBead[]): GraphLens {
-  return listEpics(model, beads).length > 0 ? DEFAULT_LENS : "full";
+  return listContainers(model, beads).length > 0 ? DEFAULT_LENS : "full";
 }
 
 export interface LensOptions {
@@ -170,42 +181,46 @@ export interface LensOptions {
   /** Anchor for `blast-radius`. Without one, that lens has nothing to draw. */
   focusId?: string | null;
   /** Anchor for `epic`. Without one, that lens has nothing to draw. */
-  epicId?: string | null;
+  containerId?: string | null;
   /** Types kept off every lens. Defaults to the coordination types. */
   hiddenTypes?: readonly string[];
   /** Hop limit for `blast-radius`. Unlimited by default. */
   depth?: number;
 }
 
-/** One entry in the epic picker: an epic and how far along its subtree is. */
-export interface EpicOption {
+/** One entry in the container picker: a container and how far along its subtree is. */
+export interface ContainerOption {
   id: string;
   /** Title when there is one, id otherwise. Never empty. */
   label: string;
-  /** Descendants, the epic itself excluded. */
+  /** Descendants, the container itself excluded. */
   total: number;
   /** Closed descendants. */
   closed: number;
   /**
-   * Every member has closed, so there is nothing left to open this epic up for.
+   * Every member has closed, so there is nothing left to open this container
+   * up for.
    *
-   * Membership decides this, not the epic's own status: a container's status
-   * says nothing about its contents, and bd does not close an epic when its
-   * last child lands. An epic with no members is never complete - 0 of 0 is not
-   * an achievement, and hiding it would make it unreachable.
+   * Membership decides this, not the container's own status: a container's
+   * status says nothing about its contents, and bd does not close an epic when
+   * its last child lands. A container with no members is never complete - 0 of
+   * 0 is not an achievement, and hiding it would make it unreachable.
    */
   complete: boolean;
 }
 
 /**
- * The epics a project offers the epic lens, in id order.
+ * The containers a project offers the container lens, in id order.
  *
- * "Epic" here means a bead that contains work: anything typed `epic`, plus any
- * bead that is some visible bead's parent. Typing is convention, containment is
- * fact, and a picker built on the convention alone would omit a task with
- * subtasks that the tree view happily renders as a container.
+ * A container is a bead that holds work: anything of a container type - `epic`
+ * or `milestone` - plus any bead that is some visible bead's parent. Typing is
+ * convention, containment is fact, and a picker built on the convention alone
+ * would omit a task with subtasks that the tree view happily renders as a
+ * container. Reading the type from `isContainerType` rather than comparing
+ * against `"epic"` is what put milestones on this list: they were already a
+ * first-class bd type with a glyph, and the lens simply never looked at them.
  */
-export function listEpics(model: BeadsGraphModel, beads: LensBead[]): EpicOption[] {
+export function listContainers(model: BeadsGraphModel, beads: LensBead[]): ContainerOption[] {
   const context = buildContext(model, beads, undefined);
   const parents = new Set<string>();
   for (const id of context.ids) {
@@ -214,7 +229,7 @@ export function listEpics(model: BeadsGraphModel, beads: LensBead[]): EpicOption
   }
 
   return context.ids
-    .filter((id) => parents.has(id) || context.beads.get(id)?.type === "epic")
+    .filter((id) => parents.has(id) || isContainerType(context.beads.get(id)?.type))
     .sort(byId)
     .map((id) => {
       const bead = context.beads.get(id) as LensBead;
@@ -233,39 +248,44 @@ export function listEpics(model: BeadsGraphModel, beads: LensBead[]): EpicOption
 }
 
 /**
- * The epics the picker offers, given the toggle and what the lens is anchored on.
+ * The containers the picker offers, given the toggle and what the lens is
+ * anchored on.
  *
- * Finished epics are hidden by default - a project accumulates them forever and
- * they are never the thing being worked on. The anchor is re-admitted
- * unconditionally, because the alternative is that the epic you are watching
- * drops out of the list at the moment its last bead closes, and the lens falls
- * through to some unrelated epic exactly when you wanted to see the finish.
+ * Finished containers are hidden by default - a project accumulates them
+ * forever and they are never the thing being worked on. The anchor is
+ * re-admitted unconditionally, because the alternative is that the container
+ * you are watching drops out of the list at the moment its last bead closes,
+ * and the lens falls through to some unrelated one exactly when you wanted to
+ * see the finish.
  */
-export function visibleEpics(
-  epics: EpicOption[],
+export function visibleContainers(
+  containers: ContainerOption[],
   showCompleted: boolean,
   anchorId: string | null
-): EpicOption[] {
-  if (showCompleted) return epics;
-  return epics.filter((epic) => !epic.complete || epic.id === anchorId);
+): ContainerOption[] {
+  if (showCompleted) return containers;
+  return containers.filter((container) => !container.complete || container.id === anchorId);
 }
 
-/** How many epics the default filter is holding back. */
-export function hiddenEpicCount(epics: EpicOption[], anchorId: string | null): number {
-  return epics.length - visibleEpics(epics, false, anchorId).length;
+/** How many containers the default filter is holding back. */
+export function hiddenContainerCount(
+  containers: ContainerOption[],
+  anchorId: string | null
+): number {
+  return containers.length - visibleContainers(containers, false, anchorId).length;
 }
 
 /**
- * Every visible bead whose parent chain reaches `epicId`, in model order.
+ * Every visible bead whose parent chain reaches `containerId`, in model order.
  * A parent cycle terminates the walk rather than looping it.
  */
-function descendantsOf(model: BeadsGraphModel, context: Context, epicId: string): string[] {
+function descendantsOf(model: BeadsGraphModel, context: Context, containerId: string): string[] {
   return context.ids.filter((id) => {
-    if (id === epicId) return false;
+    if (id === containerId) return false;
     const seen = new Set<string>([id]);
     let current = model.nodes[id]?.parent;
     while (current && context.beads.has(current) && !seen.has(current)) {
-      if (current === epicId) return true;
+      if (current === containerId) return true;
       seen.add(current);
       current = model.nodes[current]?.parent;
     }
@@ -302,7 +322,7 @@ export function applyLens(
 
   switch (options.lens) {
     case "epic":
-      return epicDetail(model, context, options, total);
+      return containerDetail(model, context, options, total);
     case "blast-radius":
       return blastRadius(model, context, options, total);
     case "full":
@@ -364,40 +384,40 @@ function buildContext(
 }
 
 /**
- * One epic opened up: the epic itself plus every visible descendant, each
- * member drawn as its own node.
+ * One container opened up: the container itself plus every visible descendant,
+ * each member drawn as its own node.
  *
  * The containment tethers run member -> container here, the reverse of the
  * full lens, so the left-to-right layout converges the whole subtree on the
- * epic instead of fanning out from it: the epic reads as the destination the
+ * container instead of fanning out from it: it reads as the destination the
  * work flows into, which is what "0 of 7 closed" on its card is a summary of.
  * Blocking edges among members keep their usual direction, so sequencing and
  * containment point the same way and the picture stays a DAG.
  */
-function epicDetail(
+function containerDetail(
   model: BeadsGraphModel,
   context: Context,
   options: LensOptions,
   total: number
 ): LensResult {
-  const epicId = options.epicId ?? undefined;
-  if (!epicId || !context.beads.has(epicId)) {
+  const containerId = options.containerId ?? undefined;
+  if (!containerId || !context.beads.has(containerId)) {
     return { lens: "epic", nodes: [], edges: [], omitted: total };
   }
 
-  const members = descendantsOf(model, context, epicId);
-  const result = finish(model, context, "epic", [epicId, ...members], undefined, total);
+  const members = descendantsOf(model, context, containerId);
+  const result = finish(model, context, "epic", [containerId, ...members], undefined, total);
 
-  // The epic's own card carries the progress line, so the lens answers "how far
-  // along" without a separate header.
-  const epic = result.nodes.find((node) => node.id === epicId);
-  if (epic && members.length > 0) {
-    epic.progress = {
+  // The container's own card carries the progress line, so the lens answers
+  // "how far along" without a separate header.
+  const container = result.nodes.find((node) => node.id === containerId);
+  if (container && members.length > 0) {
+    container.progress = {
       closed: members.filter((member) => context.beads.get(member)?.status === "closed").length,
       total: members.length,
     };
   }
-  result.focusId = epicId;
+  result.focusId = containerId;
   return result;
 }
 
@@ -514,8 +534,8 @@ function finish(
 
   // Containment tethers, where blast-radius is the odd one out: it answers
   // "what does this reach", and a containment link is not part of the answer.
-  // The epic lens reverses the tether (member -> container) so layout converges
-  // the subtree on the epic; see `epicDetail`.
+  // The container lens reverses the tether (member -> container) so layout
+  // converges the subtree on the container; see `containerDetail`.
   if (lens === "full" || lens === "epic") {
     for (const id of context.ids) {
       const parent = model.nodes[id]?.parent;

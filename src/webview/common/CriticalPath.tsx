@@ -1,12 +1,13 @@
 /**
  * CriticalPath Component
  *
- * The longest blocker chain inside an epic. "This epic is nine sequential beads
- * deep" is the most actionable planning fact the graph carries: it is the one
- * number that does not improve by adding people.
+ * The longest blocker chain inside a container - an epic, a milestone, or
+ * anything else holding work. "This is nine sequential beads deep" is the most
+ * actionable planning fact the graph carries: it is the one number that does
+ * not improve by adding people.
  *
- * Depth 1 means nothing inside the epic blocks anything else, so the chain is
- * stated rather than drawn - there is no sequence to show.
+ * Depth 1 means nothing inside blocks anything else, so the chain is stated
+ * rather than drawn - there is no sequence to show.
  */
 
 import React, { useState } from "react";
@@ -41,7 +42,7 @@ export function CriticalPath({
         disabled={!expandable}
         title={
           depth === 1
-            ? "Nothing inside this epic blocks anything else"
+            ? "Nothing inside this blocks anything else"
             : `Longest chain: ${depth} beads deep`
         }
       >

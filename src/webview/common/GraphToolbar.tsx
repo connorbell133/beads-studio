@@ -13,7 +13,7 @@
 
 import React from "react";
 import {
-  EpicOption,
+  ContainerOption,
   GraphLens,
   GRAPH_LENSES,
   LENS_DESCRIPTIONS,
@@ -27,16 +27,19 @@ export interface GraphToolbarProps {
   /** Blast radius needs a bead to radiate from; without one its button explains why. */
   anchored: boolean;
 
-  /** What the epic lens can anchor on, already filtered. Empty disables that lens's tab. */
-  epics: EpicOption[];
-  /** The epic the epic lens is anchored on. */
-  epicId: string | null;
-  onEpicChange: (epicId: string) => void;
-  /** Whether finished epics are being listed alongside the live ones. */
+  /**
+   * What the container lens can anchor on, already filtered. Empty disables
+   * that lens's tab. Epics, milestones, and anything else holding work.
+   */
+  containers: ContainerOption[];
+  /** The container the container lens is anchored on. */
+  containerId: string | null;
+  onContainerChange: (containerId: string) => void;
+  /** Whether finished containers are being listed alongside the live ones. */
   showCompleted: boolean;
   onShowCompletedChange: (showCompleted: boolean) => void;
-  /** Finished epics the default filter is holding back. 0 hides the toggle. */
-  hiddenEpicCount: number;
+  /** Finished containers the default filter is holding back. 0 hides the toggle. */
+  hiddenContainerCount: number;
 
   query: string;
   onQueryChange: (query: string) => void;
@@ -70,12 +73,12 @@ export function GraphToolbar({
   lens,
   onLensChange,
   anchored,
-  epics,
-  epicId,
-  onEpicChange,
+  containers,
+  containerId,
+  onContainerChange,
   showCompleted,
   onShowCompletedChange,
-  hiddenEpicCount,
+  hiddenContainerCount,
   query,
   onQueryChange,
   onQueryKeyDown,
@@ -99,7 +102,8 @@ export function GraphToolbar({
       <div className="graph-canvas-lenses" role="group" aria-label="Graph lens">
         {GRAPH_LENSES.map((option) => {
           const disabled =
-            (option === "blast-radius" && !anchored) || (option === "epic" && epics.length === 0);
+            (option === "blast-radius" && !anchored) ||
+            (option === "epic" && containers.length === 0);
           return (
             <button
               key={option}
@@ -110,8 +114,8 @@ export function GraphToolbar({
               title={
                 option === "blast-radius" && !anchored
                   ? "Select a bead to see what it touches"
-                  : option === "epic" && epics.length === 0
-                    ? "No epics in this project yet"
+                  : option === "epic" && containers.length === 0
+                    ? "Nothing holds work in this project yet"
                     : LENS_DESCRIPTIONS[option]
               }
               onClick={() => onLensChange(option)}
@@ -122,30 +126,31 @@ export function GraphToolbar({
         })}
       </div>
 
-      {/* Which epic, but only while the answer matters. The picker names the
-          epic rather than saying "Epic:" - the active tab already says what
-          kind of thing it is. */}
-      {lens === "epic" && epics.length > 0 && (
+      {/* Which container, but only while the answer matters. The picker names
+          the container rather than labelling itself - the active tab already
+          says what kind of thing it is. */}
+      {lens === "epic" && containers.length > 0 && (
         <Dropdown
           className="graph-canvas-epic-picker"
           triggerClassName="graph-canvas-epic-trigger"
-          title="Choose which epic to draw"
+          title="Choose which container to draw"
           trigger={
             <span className="graph-canvas-epic-label">
-              {epics.find((epic) => epic.id === epicId)?.label ?? "Choose an epic"}
+              {containers.find((container) => container.id === containerId)?.label ??
+                "Choose a container"}
             </span>
           }
         >
-          {epics.map((epic) => (
+          {containers.map((container) => (
             <DropdownItem
-              key={epic.id}
-              active={epic.id === epicId}
-              onClick={() => onEpicChange(epic.id)}
-              title={`${epic.id} — ${epic.label}`}
+              key={container.id}
+              active={container.id === containerId}
+              onClick={() => onContainerChange(container.id)}
+              title={`${container.id} — ${container.label}`}
             >
-              <span className="graph-canvas-epic-option">{epic.label}</span>
+              <span className="graph-canvas-epic-option">{container.label}</span>
               <span className="graph-canvas-epic-progress">
-                {epic.closed}/{epic.total}
+                {container.closed}/{container.total}
               </span>
             </DropdownItem>
           ))}
@@ -154,15 +159,15 @@ export function GraphToolbar({
               of the toggle is to see the list it just changed. Named with its
               count so the omission is visible rather than inferred from a
               shorter list than you remembered. */}
-          {hiddenEpicCount > 0 && (
+          {hiddenContainerCount > 0 && (
             <button
               type="button"
               className="dropdown-item graph-canvas-epic-toggle"
               aria-pressed={showCompleted}
               title={
                 showCompleted
-                  ? "List only epics with work still open"
-                  : "Also list epics whose every bead has closed"
+                  ? "List only containers with work still open"
+                  : "Also list containers whose every bead has closed"
               }
               onClick={() => onShowCompletedChange(!showCompleted)}
             >
@@ -170,7 +175,7 @@ export function GraphToolbar({
                 {showCompleted ? "✓" : ""}
               </span>
               <span className="graph-canvas-epic-option">
-                Show completed ({hiddenEpicCount})
+                Show completed ({hiddenContainerCount})
               </span>
             </button>
           )}

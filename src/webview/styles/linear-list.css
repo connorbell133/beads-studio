@@ -1,6 +1,6 @@
 /* ---- Linear-style issues list --------------------------------------------
    Rows are [priority | id | status | type | title | dep chips | meta],
-   grouped under their epic with a sticky, collapsible header. Compact
+   grouped under their container with a sticky, collapsible header. Compact
    density: 26px rows, VS Code-native hues throughout. */
 
 .lin-list {
@@ -153,6 +153,45 @@
 
 .lin-chip-blocks svg {
   color: var(--vscode-charts-blue);
+}
+
+/* Summed member estimate. Recessed against the dependency chips: it is
+   context for a container, not a state anything is in. A partial sum is
+   dimmed further, so "this is a floor" is legible before the tooltip. */
+.lin-chip-estimate {
+  border-color: transparent;
+  gap: 4px;
+}
+
+.lin-chip-estimate .icon-wrapper {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.8;
+}
+
+.lin-chip-estimate.partial {
+  opacity: 0.72;
+}
+
+/* The critical path in a group header. Capped and clipped: an expanded chain
+   is long by nature and must never push the container's own title out. */
+.lin-group-path {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+}
+
+.lin-group-path .critical-path {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.lin-group-path .critical-path-chain {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .lin-more {

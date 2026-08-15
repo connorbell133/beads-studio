@@ -72,9 +72,9 @@ import {
   GraphLens,
   LENS_LABELS,
   LensNode,
-  listEpics,
-  visibleEpics,
-  hiddenEpicCount,
+  listContainers,
+  visibleContainers,
+  hiddenContainerCount,
 } from "../../graph/lens";
 import {
   chainFilter,
@@ -200,18 +200,21 @@ export function GraphCanvas({
 
   const anchor = focusId ?? selectedBeadId ?? null;
 
-  const epics = useMemo(() => (graph ? listEpics(graph, beads) : []), [graph, beads]);
-  /** The epic the user picked from the toolbar, kept only while it exists. */
-  const [ownEpicId, setOwnEpicId] = useState<string | null>(null);
-  /** Finished epics are listed only on request; see `visibleEpics`. */
+  const containers = useMemo(
+    () => (graph ? listContainers(graph, beads) : []),
+    [graph, beads]
+  );
+  /** The container the user picked from the toolbar, kept only while it exists. */
+  const [ownContainerId, setOwnContainerId] = useState<string | null>(null);
+  /** Finished containers are listed only on request; see `visibleContainers`. */
   const [showCompleted, setShowCompleted] = useState(false);
-  // The epic lens's anchor, derived rather than stored: the user's pick when
-  // it still exists, else the epic the selection sits inside, else the first
-  // epic. Deriving means a project switch or a deleted epic can never leave
-  // the lens pointing at nothing.
-  const epicId = useMemo(() => {
-    if (ownEpicId && epics.some((epic) => epic.id === ownEpicId)) return ownEpicId;
-    const offered = new Set(epics.map((epic) => epic.id));
+  // The container lens's anchor, derived rather than stored: the user's pick
+  // when it still exists, else the container the selection sits inside, else
+  // the first one. Deriving means a project switch or a deleted container can
+  // never leave the lens pointing at nothing.
+  const containerId = useMemo(() => {
+    if (ownContainerId && containers.some((c) => c.id === ownContainerId)) return ownContainerId;
+    const offered = new Set(containers.map((c) => c.id));
     const seen = new Set<string>();
     let current: string | undefined = selectedBeadId ?? undefined;
     while (current && !seen.has(current)) {
@@ -219,37 +222,46 @@ export function GraphCanvas({
       seen.add(current);
       current = graph?.nodes[current]?.parent;
     }
-    // Prefer an epic with work left: opening on a finished one shows a picture
-    // with nothing to do in it.
-    return (epics.find((epic) => !epic.complete) ?? epics[0])?.id ?? null;
-  }, [ownEpicId, epics, selectedBeadId, graph]);
+    // Prefer a container with work left: opening on a finished one shows a
+    // picture with nothing to do in it.
+    return (containers.find((c) => !c.complete) ?? containers[0])?.id ?? null;
+  }, [ownContainerId, containers, selectedBeadId, graph]);
 
   /** What the picker lists, and how many it is holding back. */
-  const shownEpics = useMemo(
-    () => visibleEpics(epics, showCompleted, epicId),
-    [epics, showCompleted, epicId]
+  const shownContainers = useMemo(
+    () => visibleContainers(containers, showCompleted, containerId),
+    [containers, showCompleted, containerId]
   );
-  const hiddenEpics = useMemo(() => hiddenEpicCount(epics, epicId), [epics, epicId]);
+  const hiddenContainers = useMemo(
+    () => hiddenContainerCount(containers, containerId),
+    [containers, containerId]
+  );
 
   // The requested lens is evaluated first so the density decision has a real
   // node count to judge. Only the lens that survives that decision is laid out,
   // so a 500-node request never pays for a dagre pass nobody can read.
   const view = useMemo(() => {
     if (!graph) return null;
-    const requested = applyLens(graph, visibleBeads, { lens: requestedLens, focusId: anchor, epicId });
+    const requested = applyLens(graph, visibleBeads, {
+      lens: requestedLens,
+      focusId: anchor,
+      containerId,
+    });
     const density = resolveDensity({
       requested: requestedLens,
       nodeCount: requested.nodes.length,
       override: densityOverride,
-      // Collapsing to the epic lens is only an offer when it can draw something.
-      collapsible: epics.length > 0,
+      // Collapsing to the container lens is only an offer when it can draw
+      // something.
+      collapsible: containers.length > 0,
     });
     const result =
       density.lens === requestedLens
         ? requested
-        : applyLens(graph, visibleBeads, { lens: density.lens, focusId: anchor, epicId });
+        : applyLens(graph, visibleBeads, { lens: density.lens, focusId: anchor, containerId });
 
-    // The epic's card carries its progress line, so it needs the taller body.
+    // The container's card carries its progress line, so it needs the taller
+    // body.
     const sized = result.nodes.map((node) => ({
       id: node.id,
       width: NODE_WIDTH,
@@ -261,14 +273,14 @@ export function GraphCanvas({
       { direction: "LR" }
     );
     return { result, density, sized, laidOut };
-  }, [graph, visibleBeads, requestedLens, anchor, epicId, densityOverride, epics]);
+  }, [graph, visibleBeads, requestedLens, anchor, containerId, densityOverride, containers]);
 
   const nodes = view?.result.nodes ?? [];
   const edges = view?.result.edges ?? [];
   const drawnLens = view?.result.lens ?? requestedLens;
-  // On the epic lens the anchor epic is the destination the subtree converges
+  // On the container lens the anchor is the destination the subtree converges
   // into, not work to pick up, and it is drawn as a goal rather than by
-  // readiness. Only there: on other lenses an epic is just another bead.
+  // readiness. Only there: on other lenses a container is just another bead.
   const goalId = drawnLens === "epic" ? (view?.result.focusId ?? null) : null;
 
   // Re-choose when the current lens turns out to have nothing to draw.
@@ -537,9 +549,9 @@ export function GraphCanvas({
           : `blocks ${neighbours.blocked.length}`;
       const goal =
         node.id === goalId && node.progress
-          ? ` The goal this epic's work converges on; ${node.progress.closed} of ${node.progress.total} closed.`
+          ? ` The goal this container's work converges on; ${node.progress.closed} of ${node.progress.total} closed.`
           : node.id === goalId
-            ? " The goal this epic's work converges on."
+            ? " The goal this container's work converges on."
             : "";
       return `${node.id}, ${node.label}. ${blockers}, ${blocked}.${goal}`;
     },
@@ -652,12 +664,12 @@ export function GraphCanvas({
         lens={requestedLens}
         onLensChange={chooseLens}
         anchored={Boolean(anchor)}
-        epics={shownEpics}
-        epicId={epicId}
-        onEpicChange={setOwnEpicId}
+        containers={shownContainers}
+        containerId={containerId}
+        onContainerChange={setOwnContainerId}
         showCompleted={showCompleted}
         onShowCompletedChange={setShowCompleted}
-        hiddenEpicCount={hiddenEpics}
+        hiddenContainerCount={hiddenContainers}
         query={query}
         onQueryChange={setQuery}
         onQueryKeyDown={onFindKeyDown}
@@ -692,7 +704,7 @@ export function GraphCanvas({
           lens={drawnLens}
           nodeCount={nodes.length}
           anchored={Boolean(anchor)}
-          hasEpics={epics.length > 0}
+          hasContainers={containers.length > 0}
         />
       ) : (
         <svg
@@ -878,7 +890,7 @@ function DensityNotice({
     return (
       <p className="graph-canvas-density" role="status">
         {LENS_LABELS[density.requested]} would draw {density.nodeCount} beads at once, past what
-        stays legible here. Showing one epic instead.{" "}
+        stays legible here. Showing one container instead.{" "}
         <button type="button" className="graph-canvas-density-action" onClick={() => onOverride(true)}>
           Draw all {density.nodeCount} anyway
         </button>
@@ -895,7 +907,7 @@ function DensityNotice({
           className="graph-canvas-density-action"
           onClick={() => onOverride(false)}
         >
-          Collapse to one epic
+          Collapse to one container
         </button>
       </p>
     );
@@ -1086,13 +1098,13 @@ function EmptyCanvas({
   lens,
   nodeCount,
   anchored,
-  hasEpics,
+  hasContainers,
 }: {
   lens: GraphLens;
   nodeCount: number;
   anchored: boolean;
-  /** Whether the project has any epic the epic lens could draw. */
-  hasEpics: boolean;
+  /** Whether the project has anything the container lens could draw. */
+  hasContainers: boolean;
 }): React.ReactElement {
   if (lens === "blast-radius") {
     if (!anchored) {
@@ -1114,14 +1126,14 @@ function EmptyCanvas({
   }
 
   if (lens === "epic") {
-    if (!hasEpics) {
+    if (!hasContainers) {
       return (
         <div className="graph-canvas-empty">
-          <p>This project has no epics yet.</p>
+          <p>Nothing in this project holds work yet.</p>
           <p className="graph-canvas-empty-hint">
-            Group related work under one with <code>bd create --type=epic</code> and{" "}
-            <code>--parent</code>, or switch the lens above to{" "}
-            <strong>{LENS_LABELS.full}</strong> to see everything.
+            Group related work under one with <code>bd create --type=epic</code> (or{" "}
+            <code>--type=milestone</code>) and <code>--parent</code>, or switch the lens above
+            to <strong>{LENS_LABELS.full}</strong> to see everything.
           </p>
         </div>
       );
@@ -1129,17 +1141,17 @@ function EmptyCanvas({
     if (nodeCount === 0) {
       return (
         <div className="graph-canvas-empty">
-          <p>No epic chosen.</p>
+          <p>No container chosen.</p>
           <p className="graph-canvas-empty-hint">Pick one from the dropdown in the toolbar.</p>
         </div>
       );
     }
-    // One node and no tethers: the chosen epic exists but holds nothing.
+    // One node and no tethers: the chosen container exists but holds nothing.
     return (
       <div className="graph-canvas-empty">
-        <p>Nothing inside this epic yet.</p>
+        <p>Nothing inside this one yet.</p>
         <p className="graph-canvas-empty-hint">
-          Add work to it with <code>bd create --parent=&lt;epic-id&gt;</code>.
+          Add work to it with <code>bd create --parent=&lt;id&gt;</code>.
         </p>
       </div>
     );

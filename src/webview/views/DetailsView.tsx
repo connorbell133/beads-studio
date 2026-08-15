@@ -25,6 +25,7 @@ import {
   getTypeSortOrder,
   sortLabels,
 } from "../types";
+import { formatMinutes } from "../../graph/duration";
 import { Timestamp } from "../common/Timestamp";
 import { StatusPriorityPill } from "../common/StatusPriorityPill";
 
@@ -593,7 +594,7 @@ export function DetailsView({
             />
           ) : (
             <span className="estimate-value">
-              {Math.floor(displayBead.estimatedMinutes! / 60)}h {displayBead.estimatedMinutes! % 60}m
+              {formatMinutes(displayBead.estimatedMinutes!)}
             </span>
           )}
         </div>
