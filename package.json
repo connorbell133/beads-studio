@@ -100,6 +100,11 @@
         "icon": "$(file-text)"
       },
       {
+        "command": "beads.newEpic",
+        "title": "Beads: New Epic from Plan",
+        "icon": "$(add)"
+      },
+      {
         "command": "beads.refresh",
         "title": "Beads: Refresh",
         "icon": "$(refresh)"
@@ -124,6 +129,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "beads.newEpic",
+          "when": "view == beadsPanel",
+          "group": "navigation@0"
+        },
         {
           "command": "beads.refresh",
           "when": "view == beadsDashboard",

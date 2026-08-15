@@ -14,6 +14,8 @@ import {
   UpdateIssueArgs,
 } from "./BeadsBackend";
 import { BeadsCommandRunner } from "./BeadsCommandRunner";
+import { PlanCommitResult } from "./plan-batch";
+import { PlanDraft } from "./plan-draft";
 import { BeadEdge } from "./types";
 
 const execFileAsync = util.promisify(execFile);
@@ -348,6 +350,10 @@ export class BeadsDoltBackend implements BeadsBackend {
 
   async create(args: CreateIssueArgs): Promise<BeadsIssue> {
     return this.cli.create(args);
+  }
+
+  async createPlanEpic(draft: PlanDraft): Promise<PlanCommitResult> {
+    return this.cli.createPlanEpic(draft);
   }
 
   async update(args: UpdateIssueArgs): Promise<BeadsIssue> {

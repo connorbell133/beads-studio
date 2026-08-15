@@ -1,4 +1,5 @@
 import type { BeadsGraphModel } from "../graph/types";
+import type { PlanDraft } from "./plan-draft";
 
 /**
  * Beads - TypeScript Data Models
@@ -353,7 +354,24 @@ export type ExtensionToWebviewMessage =
   | { type: "setLoading"; loading: boolean }
   | { type: "setError"; error: string | null }
   | { type: "setSettings"; settings: WebviewSettings }
+  // The outcome of a plan commit. Carried back to the composer rather than only
+  // shown as a notification, because on failure the draft is still on screen and
+  // the message belongs next to it.
+  | { type: "setPlanCommitState"; state: PlanCommitState }
   | { type: "refresh" };
+
+/**
+ * Where a plan commit is.
+ *
+ * `committing` exists so the composer can refuse a second submit while the
+ * first batch is still in flight - a double-submit would create the epic twice,
+ * and `bd batch` has no way to notice.
+ */
+export type PlanCommitState =
+  | { phase: "idle" }
+  | { phase: "committing" }
+  | { phase: "committed"; epicId: string; taskCount: number; edgeCount: number }
+  | { phase: "failed"; message: string; createdIds: string[] };
 
 // Messages sent from webview to extension
 export type WebviewToExtensionMessage =
@@ -377,6 +395,7 @@ export type WebviewToExtensionMessage =
   | { type: "copyBeadId"; beadId: string }
   | { type: "openFile"; filePath: string; line?: number }
   | { type: "openIssuesPreset"; presetId: string }
+  | { type: "commitPlanDraft"; draft: PlanDraft }
   | { type: "openGraph" };
 
 // CLI command result

@@ -1,3 +1,5 @@
+import type { PlanCommitResult } from "./plan-batch";
+import type { PlanDraft } from "./plan-draft";
 import type { BeadEdge, RawDependency } from "./types";
 
 /**
@@ -123,6 +125,14 @@ export interface BeadsBackend {
   listGraph(): Promise<BeadsGraphPayload>;
   show(id: string): Promise<BeadsIssue | null>;
   create(args: CreateIssueArgs): Promise<BeadsIssue>;
+  /**
+   * Creates a whole epic - the epic, its tasks, and every edge between them.
+   *
+   * Separate from create() because the unit of correctness is the graph, not the
+   * issue: the shape is what the user reviewed, so it goes through `bd batch`
+   * and lands whole or not at all.
+   */
+  createPlanEpic(draft: PlanDraft): Promise<PlanCommitResult>;
   update(args: UpdateIssueArgs): Promise<BeadsIssue>;
   close(args: CloseIssueArgs): Promise<BeadsIssue>;
   addDependency(args: DependencyArgs): Promise<void>;

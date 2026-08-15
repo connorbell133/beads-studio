@@ -8,8 +8,15 @@
 // dependency, so both sides can share one definition - and a mirrored copy is
 // exactly how the dependency shape drifted out of sync in the first place.
 import type { BeadsGraphModel } from "../graph/types";
+// The draft and its commit state are defined once, on the extension side, and
+// used verbatim here: a mirrored copy of the shape crossing postMessage is
+// exactly how the dependency types drifted before.
+import type { PlanCommitState } from "../backend/types";
+import type { PlanDraft } from "../backend/plan-draft";
 
 export type { BeadsGraphModel, BeadGraphNode } from "../graph/types";
+export type { PlanCommitState } from "../backend/types";
+export type { PlanDraft, PlanDraftNode, PlanDraftEdge } from "../backend/plan-draft";
 export { COORDINATION_TYPES } from "../graph/types";
 
 // Re-export types that are shared between extension and webview.
@@ -128,6 +135,7 @@ export type ExtensionMessage =
   | { type: "setLoading"; loading: boolean }
   | { type: "setError"; error: string | null }
   | { type: "setSettings"; settings: WebviewSettings }
+  | { type: "setPlanCommitState"; state: PlanCommitState }
   | { type: "refresh" }
   | { type: "showToast"; text: string }
   | { type: "applyIssuesPreset"; presetId: string }
@@ -155,6 +163,7 @@ export type WebviewMessage =
   | { type: "copyBeadId"; beadId: string }
   | { type: "openFile"; filePath: string; line?: number }
   | { type: "openIssuesPreset"; presetId: string }
+  | { type: "commitPlanDraft"; draft: PlanDraft }
   | { type: "openGraph" };
 
 // Human-readable labels
