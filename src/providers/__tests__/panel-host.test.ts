@@ -40,6 +40,7 @@ class TestPanel extends BeadsPanelHost {
 /** Same host, but opted into the poll the graph tab uses. */
 class PollingTestPanel extends TestPanel {
   protected readonly pollIntervalMs = 5000;
+  protected readonly livePollIntervalMs = 60000;
 
   /** Resolves the pending load, so a slow read can be held open in a test. */
   public release: (() => void) | null = null;
@@ -56,6 +57,37 @@ class PollingTestPanel extends TestPanel {
   public hold = false;
 }
 
+/**
+ * Stands in for the manager's live change feed, so a test can bring the feed up
+ * or down the way a real `bd events tail` would.
+ */
+class FakeChangeFeed {
+  public live = false;
+  private listeners: Array<(live: boolean) => void> = [];
+  public disposedListeners = 0;
+
+  readonly onChangeFeedStateChanged = (listener: (live: boolean) => void) => {
+    this.listeners.push(listener);
+    return {
+      dispose: () => {
+        this.disposedListeners++;
+        this.listeners = this.listeners.filter((l) => l !== listener);
+      },
+    };
+  };
+
+  setLive(live: boolean): void {
+    this.live = live;
+    for (const listener of [...this.listeners]) listener(live);
+  }
+
+  get listenerCount(): number {
+    return this.listeners.length;
+  }
+}
+
+let feed: FakeChangeFeed;
+
 function createPanel<T extends TestPanel = TestPanel>(
   Panel: new (
     uri: vscode.Uri,
@@ -71,6 +103,8 @@ function createPanel<T extends TestPanel = TestPanel>(
     getClient: () => null,
     getActiveProject: () => ({ id: "p1", rootPath: "/repo", name: "repo" }),
     getProjects: () => [{ id: "p1", rootPath: "/repo", name: "repo" }],
+    isLiveChangeFeedActive: () => feed.live,
+    onChangeFeedStateChanged: feed.onChangeFeedStateChanged,
   } as unknown as BeadsProjectManager;
 
   const logger = new Logger(
@@ -82,6 +116,7 @@ function createPanel<T extends TestPanel = TestPanel>(
 describe("BeadsPanelHost", () => {
   beforeEach(() => {
     createdPanels.length = 0;
+    feed = new FakeChangeFeed();
   });
 
   it("creates a panel on first reveal and renders the webview html", () => {
@@ -231,6 +266,100 @@ describe("BeadsPanelHost", () => {
       panel.hold = false;
       await jest.advanceTimersByTimeAsync(5_000);
       expect(panel.loadCalls).toEqual(["background", "background"]);
+    });
+
+    describe("with a live change feed", () => {
+      it("drops to the safety-net interval when the feed is already up", async () => {
+        feed.live = true;
+        const panel = createPanel(PollingTestPanel);
+        panel.reveal();
+
+        // The fast interval would have read three times by now.
+        await jest.advanceTimersByTimeAsync(15_000);
+        expect(panel.loadCalls).toEqual([]);
+
+        // The slow read still happens: the journal carries neither `bd sql`
+        // writes nor rows that arrived by `bd dolt pull`.
+        await jest.advanceTimersByTimeAsync(45_000);
+        expect(panel.loadCalls).toEqual(["background"]);
+      });
+
+      it("slows down when the feed comes up while the tab is open", async () => {
+        const panel = createPanel(PollingTestPanel);
+        panel.reveal();
+
+        await jest.advanceTimersByTimeAsync(5_000);
+        expect(panel.loadCalls).toEqual(["background"]);
+
+        feed.setLive(true);
+        await jest.advanceTimersByTimeAsync(15_000);
+        expect(panel.loadCalls).toEqual(["background"]);
+      });
+
+      it("speeds back up when the feed drops, with no help from the caller", async () => {
+        feed.live = true;
+        const panel = createPanel(PollingTestPanel);
+        panel.reveal();
+
+        feed.setLive(false);
+        await jest.advanceTimersByTimeAsync(10_000);
+
+        expect(panel.loadCalls).toEqual(["background", "background"]);
+      });
+
+      it("keeps one feed subscription per panel and releases it on dispose", () => {
+        const panel = createPanel(PollingTestPanel);
+        panel.reveal();
+        panel.reveal();
+        expect(feed.listenerCount).toBe(1);
+
+        panel.dispose();
+        expect(feed.listenerCount).toBe(0);
+      });
+
+      it("releases the subscription when the tab is closed from the editor", () => {
+        const panel = createPanel(PollingTestPanel);
+        panel.reveal();
+
+        createdPanels[0].fireDispose();
+
+        expect(feed.listenerCount).toBe(0);
+      });
+
+      it("does not subscribe a panel that never polls", () => {
+        const panel = createPanel();
+        panel.reveal();
+
+        expect(feed.listenerCount).toBe(0);
+      });
+    });
+  });
+
+  describe("background refresh", () => {
+    it("skips the read for a tab nobody is looking at", () => {
+      const panel = createPanel();
+      panel.reveal();
+      createdPanels[0].setVisible(false);
+      panel.loadCalls.length = 0;
+
+      panel.refresh();
+
+      expect(panel.loadCalls).toEqual([]);
+      // Project context is still delivered, so the tab is correct when it returns.
+      const types = createdPanels[0].posted.map((m) => (m as { type: string }).type);
+      expect(types).toContain("setProject");
+    });
+
+    it("still honours an explicit refresh of a hidden tab", () => {
+      const panel = createPanel();
+      panel.reveal();
+      createdPanels[0].setVisible(false);
+      panel.loadCalls.length = 0;
+
+      panel.hardRefresh();
+      panel.refreshForProjectChange();
+
+      expect(panel.loadCalls).toEqual(["manualRefresh", "projectChange"]);
     });
   });
 });

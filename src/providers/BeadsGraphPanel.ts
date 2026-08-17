@@ -12,17 +12,34 @@ import { Logger } from "../utils/logger";
 import { BeadsPanelHost, LoadReason } from "./BeadsPanelHost";
 
 /**
- * The graph is usually open beside a terminal running `bd`, and nothing else
- * tells it that a dependency was added or a bead closed - the CLI backend has no
- * change token to watch. Five seconds is short enough that the picture tracks
- * the work, long enough that it costs one read per tab per five seconds.
+ * The graph is usually open beside a terminal running `bd`, and for a long time
+ * nothing told it that a dependency was added or a bead closed - the CLI backend
+ * had no change token to watch. Five seconds was short enough that the picture
+ * tracked the work, long enough that it cost one read per tab per five seconds.
+ *
+ * This is now the fallback rather than the mechanism. Where the project has its
+ * events journal switched on, `bd events tail --follow` pushes each mutation and
+ * the graph redraws on the change instead of on the clock; this interval is what
+ * it drops back to when there is no journal to subscribe to.
  */
 const GRAPH_POLL_INTERVAL_MS = 5000;
+
+/**
+ * What the poll becomes once the feed is live.
+ *
+ * Not zero, and deliberately so: raw `bd sql` writes never enter the journal,
+ * and rows that arrive by `bd dolt pull` or a merge were not mutated on this
+ * replica so they are not journaled here either. A minute is slow enough to be
+ * free and fast enough that a synced workspace still converges without anyone
+ * hitting refresh.
+ */
+const GRAPH_LIVE_POLL_INTERVAL_MS = 60000;
 
 export class BeadsGraphPanel extends BeadsPanelHost {
   protected readonly viewType = "beadsGraph";
   protected readonly title = "Beads Graph";
   protected readonly pollIntervalMs = GRAPH_POLL_INTERVAL_MS;
+  protected readonly livePollIntervalMs = GRAPH_LIVE_POLL_INTERVAL_MS;
 
   private focusBeadId: string | null = null;
   private loadSequence = 0;

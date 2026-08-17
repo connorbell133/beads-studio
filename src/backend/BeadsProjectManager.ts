@@ -6,6 +6,7 @@ import * as util from "util";
 import * as vscode from "vscode";
 import { Logger } from "../utils/logger";
 import { resolveEnvVariables } from "../utils/resolve-env-variables";
+import { BdEventsFeed, createEventsFeedTransport } from "./bd-events-feed";
 import { BeadsBackend, MIN_SUPPORTED_BD_VERSION } from "./BeadsBackend";
 import { createBeadsBackend } from "./BeadsBackendFactory";
 import { BeadsProject } from "./types";
@@ -25,6 +26,15 @@ export class BeadsProjectManager implements vscode.Disposable {
   private activePollTimer: NodeJS.Timeout | null = null;
   private activePollToken: string | null = null;
 
+  /**
+   * One `bd events tail --follow` per active project, never per view.
+   *
+   * The feed is a child process, so ownership sits here rather than in the
+   * surfaces that consume it: four open tabs must mean one tail, and switching
+   * projects must not leave the previous project's tail running.
+   */
+  private changeFeed: BdEventsFeed | null = null;
+
   private readonly _onProjectsChanged = new vscode.EventEmitter<BeadsProject[]>();
   public readonly onProjectsChanged = this._onProjectsChanged.event;
 
@@ -33,6 +43,13 @@ export class BeadsProjectManager implements vscode.Disposable {
 
   private readonly _onDataChanged = new vscode.EventEmitter<void>();
   public readonly onDataChanged = this._onDataChanged.event;
+
+  /**
+   * Fires when the live change feed starts or stops carrying this project's
+   * mutations, so timer-driven surfaces can retune themselves without asking.
+   */
+  private readonly _onChangeFeedStateChanged = new vscode.EventEmitter<boolean>();
+  public readonly onChangeFeedStateChanged = this._onChangeFeedStateChanged.event;
 
   constructor(context: vscode.ExtensionContext, logger: Logger) {
     this.context = context;
@@ -95,6 +112,19 @@ export class BeadsProjectManager implements vscode.Disposable {
     return this.backend;
   }
 
+  /**
+   * Whether mutations are currently being pushed to us rather than discovered
+   * by re-reading.
+   *
+   * Even when true this is not a licence to stop reading on a timer: `bd sql`
+   * writes never reach the journal, and rows that arrive by `bd dolt pull` or a
+   * merge were not mutated on this replica so they are not journaled here
+   * either. Callers slow their poll down; none of them turn it off.
+   */
+  isLiveChangeFeedActive(): boolean {
+    return this.changeFeed?.isLive ?? false;
+  }
+
   async setActiveProject(projectId: string): Promise<boolean> {
     let project = this.projects.find((p) => p.id === projectId);
     if (!project) {
@@ -130,6 +160,7 @@ export class BeadsProjectManager implements vscode.Disposable {
     if (!stillExists) {
       this.activeProject = null;
       this.backend = null;
+      this.stopChangeFeed();
       this._onActiveProjectChanged.fire(null);
       this._onDataChanged.fire();
       return;
@@ -225,9 +256,53 @@ export class BeadsProjectManager implements vscode.Disposable {
       clearInterval(this.activePollTimer);
       this.activePollTimer = null;
     }
+    this.stopChangeFeed();
     this._onProjectsChanged.dispose();
     this._onActiveProjectChanged.dispose();
     this._onDataChanged.dispose();
+    this._onChangeFeedStateChanged.dispose();
+  }
+
+  private stopChangeFeed(): void {
+    if (!this.changeFeed) return;
+    this.changeFeed.dispose();
+    this.changeFeed = null;
+  }
+
+  /**
+   * Subscribes to the active project's journal, if it has one.
+   *
+   * Probing happens inside the feed and never rejects, so activation does not
+   * wait on it and a project without a journal costs one extra `bd config get`.
+   */
+  private startChangeFeed(project: BeadsProject): void {
+    this.stopChangeFeed();
+
+    const enabled = vscode.workspace.getConfiguration("beads").get<boolean>("liveEvents", true);
+    if (!enabled) {
+      this.log.debug("Live change feed disabled by beads.liveEvents; using the polling fallback");
+      return;
+    }
+
+    const feed = new BdEventsFeed({
+      transport: createEventsFeedTransport({
+        bdPath: this.getBdPath(),
+        cwd: project.rootPath,
+        beadsDir: project.beadsDir,
+      }),
+      log: this.log,
+      onChange: () => {
+        if (this.changeFeed !== feed) return;
+        this._onDataChanged.fire();
+      },
+      onStateChanged: (state) => {
+        if (this.changeFeed !== feed) return;
+        this._onChangeFeedStateChanged.fire(state === "live");
+      },
+    });
+
+    this.changeFeed = feed;
+    void feed.start();
   }
 
   private getConfiguredProjectPaths(): string[] {
@@ -405,6 +480,7 @@ export class BeadsProjectManager implements vscode.Disposable {
     }
 
     this.syncActiveProjectPolling();
+    this.startChangeFeed(project);
 
     if (options.emitDataChanged) {
       this._onDataChanged.fire();

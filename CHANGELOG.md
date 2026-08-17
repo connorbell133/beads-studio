@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Views refresh when beads actually change, by subscribing to `bd events tail --follow`, where the project has its events journal enabled (`bd config set events-journal true`); polling stays as an automatic fallback and as the safety net for writes the journal cannot see
+
 ### Fixed
 
 - Tree mode heads an epic's own group even before it has any tasks, instead of filing it under "No epic"

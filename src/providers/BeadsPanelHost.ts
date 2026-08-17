@@ -23,15 +23,29 @@ export abstract class BeadsPanelHost extends BeadsWebviewHost {
   protected abstract readonly title: string;
 
   /**
-   * How often, in ms, to re-read while this panel is on screen. `0` disables it,
-   * which is the default: only surfaces that show work changing outside the
-   * editor - `bd` in a terminal, an agent closing beads - earn the extra reads.
+   * How often, in ms, to re-read while this panel is on screen and nothing is
+   * telling it about changes. `0` disables it, which is the default: only
+   * surfaces that show work changing outside the editor - `bd` in a terminal, an
+   * agent closing beads - earn the extra reads.
    */
   protected readonly pollIntervalMs: number = 0;
+
+  /**
+   * The interval to use instead once the events journal is pushing mutations to
+   * us. `0` means "no different", which is the default.
+   *
+   * This is a safety net, not a poll: it exists only for the writes the journal
+   * cannot see - raw `bd sql` DML, and rows that arrive by `bd dolt pull` or a
+   * merge rather than by a local mutation. Both are rare and neither is urgent,
+   * so the right value here is far longer than pollIntervalMs.
+   */
+  protected readonly livePollIntervalMs: number = 0;
 
   private panel?: vscode.WebviewPanel;
   private pollTimer?: ReturnType<typeof setInterval>;
   private pollInFlight = false;
+  private pollTimerIntervalMs = 0;
+  private feedSubscription?: vscode.Disposable;
 
   protected get webview(): vscode.Webview | undefined {
     return this.panel?.webview;
@@ -89,8 +103,60 @@ export abstract class BeadsPanelHost extends BeadsWebviewHost {
     this.panel.onDidDispose(() => {
       this.panel = undefined;
       this.stopPolling();
+      this.unsubscribeFromChangeFeed();
     });
 
+    this.subscribeToChangeFeed();
+    this.startPolling();
+  }
+
+  /**
+   * Retunes the timer when the live feed comes up or goes down.
+   *
+   * The feed probes asynchronously and can drop out later - a dead `bd events`
+   * process, a project switch - so the interval cannot be decided once at
+   * reveal. Falling back is meant to be invisible: the timer simply speeds back
+   * up.
+   */
+  private subscribeToChangeFeed(): void {
+    if (this.feedSubscription || this.livePollIntervalMs <= 0) return;
+    const subscribe = this.projectManager.onChangeFeedStateChanged;
+    if (typeof subscribe !== "function") return;
+
+    this.feedSubscription = subscribe((live: boolean) => {
+      this.log.debug(
+        live
+          ? "Live change feed is up; slowing this tab's poll to the safety-net interval"
+          : "Live change feed is down; restoring this tab's normal poll"
+      );
+      this.retunePolling();
+    });
+  }
+
+  private unsubscribeFromChangeFeed(): void {
+    this.feedSubscription?.dispose();
+    this.feedSubscription = undefined;
+  }
+
+  /**
+   * The interval this panel should currently be running at.
+   *
+   * Never returns 0 while polling is wanted: even a live feed keeps a slow read
+   * going, because the journal does not carry `bd sql` writes or merged-in rows.
+   */
+  private currentPollIntervalMs(): number {
+    if (this.pollIntervalMs <= 0) return 0;
+    if (this.livePollIntervalMs <= 0) return this.pollIntervalMs;
+
+    const isLive =
+      typeof this.projectManager.isLiveChangeFeedActive === "function" &&
+      this.projectManager.isLiveChangeFeedActive();
+    return isLive ? this.livePollIntervalMs : this.pollIntervalMs;
+  }
+
+  private retunePolling(): void {
+    if (this.currentPollIntervalMs() === this.pollTimerIntervalMs) return;
+    this.stopPolling();
     this.startPolling();
   }
 
@@ -100,6 +166,7 @@ export abstract class BeadsPanelHost extends BeadsWebviewHost {
 
   public dispose(): void {
     this.stopPolling();
+    this.unsubscribeFromChangeFeed();
     this.panel?.dispose();
     this.panel = undefined;
   }
@@ -112,18 +179,21 @@ export abstract class BeadsPanelHost extends BeadsWebviewHost {
    * and a poll that returns an unchanged graph is invisible.
    */
   private startPolling(): void {
-    if (this.pollTimer || this.pollIntervalMs <= 0 || !this.panel?.visible) {
+    const intervalMs = this.currentPollIntervalMs();
+    if (this.pollTimer || intervalMs <= 0 || !this.panel?.visible) {
       return;
     }
+    this.pollTimerIntervalMs = intervalMs;
     this.pollTimer = setInterval(() => {
       void this.poll();
-    }, this.pollIntervalMs);
+    }, intervalMs);
   }
 
   private stopPolling(): void {
     if (!this.pollTimer) return;
     clearInterval(this.pollTimer);
     this.pollTimer = undefined;
+    this.pollTimerIntervalMs = 0;
   }
 
   private async poll(): Promise<void> {
@@ -163,6 +233,12 @@ export abstract class BeadsPanelHost extends BeadsWebviewHost {
     }
     this.postMessage({ type: "setProject", project: this.projectManager.getActiveProject() });
     this.postMessage({ type: "setProjects", projects: this.projectManager.getProjects() });
+    // A background refresh of a tab nobody is looking at is a read nobody
+    // reads. It matters more now that mutations push refreshes rather than a
+    // timer pulling them; becoming visible again loads once, as it always did.
+    if (reason === "background" && !this.panel.visible) {
+      return;
+    }
     this.loadData(reason);
   }
 }
